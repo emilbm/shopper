@@ -1,0 +1,33 @@
+{
+  "name": "Grocer",
+  "short_name": "Grocer",
+  "description": "Plan the week, shop for it, cook it",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7f4",
+  "theme_color": "#2f8f46",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cook",
+      "short_name": "Cook",
+      "description": "This week's dinners",
+      "url": "/cook"
+    },
+    {
+      "name": "Shop",
+      "short_name": "Shop",
+      "description": "The shopping list",
+      "url": "/shop"
+    }
+  ]
+}

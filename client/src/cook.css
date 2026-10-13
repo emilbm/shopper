@@ -1,0 +1,232 @@
+/*
+ * Cook — a phone propped up by the hob. Everything is sized for a glance
+ * from arm's length and a tap with the back of a knuckle: big type, whole-row
+ * targets, and the one action that matters pinned to the bottom of the screen.
+ */
+
+.app.app--cook {
+  display: block;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.cook-header h1 {
+  font-size: 1.3rem;
+}
+
+.main--cook {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 28px);
+}
+
+/* Room for the pinned "Mark as cooked" bar. */
+.main--cookbar {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 100px);
+}
+
+/* ---------------------------------------------------------- this week */
+
+.main--cook > section {
+  margin-top: 22px;
+}
+
+.dinners {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dinner-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 84px;
+  padding: 16px 14px 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 0.06s ease;
+}
+
+.dinner-card:active {
+  transform: scale(0.985);
+}
+
+.dinner-card__title {
+  display: block;
+  font-size: 1.22rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.dinner-card__meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.88rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dinner-done {
+  color: var(--muted);
+}
+
+.tick--done {
+  background: var(--accent);
+  border-color: var(--accent);
+  flex: none;
+}
+
+/* ------------------------------------------------------------ cooking */
+
+.segmented--lg button {
+  min-height: 48px;
+  font-size: 1rem;
+}
+
+.cook-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.cook-ing {
+  display: grid;
+  grid-template-columns: 30px 5.2em minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 1.08rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cook-ing:last-child {
+  border-bottom: none;
+}
+
+.cook-ing__amount {
+  font-weight: 700;
+  text-align: right;
+}
+
+.cook-ing--got .tick {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cook-ing--got .cook-ing__amount,
+.cook-ing--got .cook-ing__name {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.steps__heading {
+  margin: 12px 2px 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  font-size: 1.12rem;
+  line-height: 1.55;
+  text-align: left;
+  cursor: pointer;
+}
+
+.step__no {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* Where the cook is: the first step not yet ticked. */
+.step--current {
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.step--current .step__no {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.step--done {
+  opacity: 0.5;
+}
+
+.step--done .step__no {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* The one action that matters, always under the thumb. */
+.cookbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12px var(--gutter) calc(env(safe-area-inset-bottom) + 12px);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+}
+
+/* ------------------------------------------------- the way in from Shop */
+
+@media (min-width: 900px) {
+  .nav .nav__cook {
+    margin-top: 14px;
+    border: 1px solid var(--border);
+  }
+
+  /* The cook view keeps its phone proportions on a big screen. */
+  .app--cook .main {
+    padding: 20px var(--gutter) 120px;
+  }
+
+  .app--cook .header {
+    padding: 12px var(--gutter);
+  }
+}

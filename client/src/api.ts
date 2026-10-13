@@ -1,0 +1,164 @@
+import type {
+  Dinner,
+  IngredientInput,
+  Item,
+  Meta,
+  Recipe,
+  RecipeDraft,
+  RecipeSummary,
+  ShoppingList,
+  StapleList,
+} from '../../shared/types';
+
+/**
+ * Requests are same-origin, so the app works unchanged on a LAN address or
+ * behind a tunnel domain — nothing here knows where it is being served from.
+ */
+const BASE = '/api';
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, 'Cannot reach the server');
+  }
+
+  if (res.status === 204) return undefined as T;
+
+  const text = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    // A proxy's HTML error page, most likely.
+    throw new ApiError(res.status, `Unexpected answer from the server (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const message =
+      typeof parsed === 'object' && parsed !== null && 'error' in parsed
+        ? String((parsed as { error: unknown }).error)
+        : `Request failed (${res.status})`;
+    throw new ApiError(res.status, message);
+  }
+
+  return parsed as T;
+}
+
+export interface EntryInput extends IngredientInput {
+  category?: string | null;
+}
+
+export interface RecipeInput {
+  name: string;
+  servings: number;
+  instructions: string;
+  sourceUrl: string;
+  notes: string;
+  tags: string[];
+  ingredients: EntryInput[];
+}
+
+export interface ListInput {
+  name: string;
+  notes: string;
+  entries: Array<{ name: string; quantity: number | null; unit: string; category?: string | null }>;
+}
+
+export interface DinnerInput {
+  title?: string;
+  recipeId?: number | null;
+  servings?: number;
+  note?: string;
+  /** Default true: a planned recipe's ingredients go on the shopping list. */
+  addToShop?: boolean;
+}
+
+export interface DinnerPatch {
+  title?: string;
+  recipeId?: number | null;
+  servings?: number;
+  note?: string;
+  cooked?: boolean;
+}
+
+export interface ParsedEntries {
+  entries: EntryInput[];
+  via: 'ai' | 'heuristic';
+  warning?: string;
+}
+
+export const api = {
+  meta: () => request<Meta>('GET', '/meta'),
+
+  items: {
+    list: () => request<Item[]>('GET', '/items'),
+    update: (id: number, input: { name: string; category: string | null; notes: string }) =>
+      request<Item>('PUT', `/items/${id}`, input),
+    remove: (id: number) => request<void>('DELETE', `/items/${id}`),
+    merge: (id: number, intoId: number) => request<Item>('POST', `/items/${id}/merge`, { intoId }),
+    categorise: () => request<{ categorised: number }>('POST', '/items/categorise', {}),
+  },
+
+  recipes: {
+    list: () => request<RecipeSummary[]>('GET', '/recipes'),
+    get: (id: number) => request<Recipe>('GET', `/recipes/${id}`),
+    create: (input: RecipeInput) => request<Recipe>('POST', '/recipes', input),
+    update: (id: number, input: RecipeInput) => request<Recipe>('PUT', `/recipes/${id}`, input),
+    remove: (id: number) => request<void>('DELETE', `/recipes/${id}`),
+    import: (input: { url?: string; text?: string }) =>
+      request<RecipeDraft>('POST', '/recipes/import', input),
+  },
+
+  lists: {
+    list: () => request<StapleList[]>('GET', '/lists'),
+    create: (input: ListInput) => request<StapleList>('POST', '/lists', input),
+    update: (id: number, input: ListInput) => request<StapleList>('PUT', `/lists/${id}`, input),
+    remove: (id: number) => request<void>('DELETE', `/lists/${id}`),
+  },
+
+  dinners: {
+    list: () => request<Dinner[]>('GET', '/dinners'),
+    get: (id: number) => request<Dinner>('GET', `/dinners/${id}`),
+    add: (input: DinnerInput) => request<Dinner>('POST', '/dinners', input),
+    update: (id: number, patch: DinnerPatch) => request<Dinner>('PATCH', `/dinners/${id}`, patch),
+    remove: (id: number, keepOnShop = false) =>
+      request<void>('DELETE', `/dinners/${id}${keepOnShop ? '?keepOnShop=true' : ''}`),
+    clearCooked: () => request<{ removed: number }>('POST', '/dinners/clear-cooked', {}),
+  },
+
+  shop: {
+    get: () => request<ShoppingList>('GET', '/shop'),
+    addDinner: (dinnerId: number) => request<ShoppingList>('POST', '/shop/dinners', { dinnerId }),
+    removeDinner: (dinnerId: number) => request<ShoppingList>('DELETE', `/shop/dinners/${dinnerId}`),
+    addRecipe: (recipeId: number, servings?: number) =>
+      request<ShoppingList>('POST', '/shop/recipes', { recipeId, servings }),
+    removeRecipe: (recipeId: number) => request<ShoppingList>('DELETE', `/shop/recipes/${recipeId}`),
+    addList: (listId: number) => request<ShoppingList>('POST', '/shop/lists', { listId }),
+    removeList: (listId: number) => request<ShoppingList>('DELETE', `/shop/lists/${listId}`),
+    addItems: (entries: EntryInput[]) => request<ShoppingList>('POST', '/shop/items', { entries }),
+    parse: (text: string, useAi: boolean) =>
+      request<ParsedEntries>('POST', '/shop/parse', { text, useAi }),
+    updateLine: (
+      id: number,
+      fields: { checked?: boolean; note?: string; amount?: { quantity: number | null; unit: string } },
+    ) => request<ShoppingList>('PATCH', `/shop/lines/${id}`, fields),
+    removeLine: (id: number) => request<ShoppingList>('DELETE', `/shop/lines/${id}`),
+    clear: (onlyChecked: boolean) => request<ShoppingList>('POST', '/shop/clear', { onlyChecked }),
+  },
+};

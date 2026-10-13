@@ -1,0 +1,25 @@
+{
+  "name": "grocer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "node server/dist/server/src/index.js",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "test": "npm run build -w server && node --test \"test/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

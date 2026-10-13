@@ -1,0 +1,47 @@
+# Grocer on the apps server, as a Portainer stack. Pulls the image built by
+# GitHub Actions, so the repo doesn't need to be checked out there.
+#
+# In Portainer: Stacks → Add stack → Web editor, paste this file, and add the
+# environment variables from .env.example (at least AI_API_KEY, and SENTRY_DSN
+# for GlitchTip). Portainer writes them to stack.env, which is what env_file
+# below reads.
+#
+# By hand instead: put this file next to a stack.env and
+#
+#   docker compose pull && docker compose up -d
+#
+# Pin GROCER_TAG to a commit sha (sha-<full-sha>) or a version tag to deploy
+# something other than the latest build of main.
+
+services:
+  grocer:
+    image: ghcr.io/emilbm/shopper:${GROCER_TAG:-latest}
+    container_name: grocer
+    restart: unless-stopped
+    env_file: stack.env
+    ports:
+      # host:container. The container always listens on 8080 (its health check
+      # looks there); only the left-hand side is yours to change. 8080 and
+      # 8081 are already taken on the apps server.
+      #
+      # LAN only. The app has no login: put Cloudflare Access in front of it
+      # before pointing a tunnel at it.
+      - "${GROCER_PORT:-8083}:8080"
+    volumes:
+      # Named volume by default. Swap for a bind mount (- /srv/grocer:/data)
+      # if it's easier to fold into the host's backup job.
+      - grocer-data:/data
+    # If the container can't resolve the AI harness by name, map it here — or
+    # use its IP in AI_BASE_URL instead.
+    # extra_hosts:
+    #   - "ai-ops:192.168.1.x"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  grocer-data:

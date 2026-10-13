@@ -1,0 +1,20 @@
+# Builds from this working copy — for developing on the image itself.
+# To deploy the image built by CI instead, use deploy/docker-compose.yml.
+#
+#   cp .env.example stack.env   # then fill in AI_API_KEY and SENTRY_DSN
+#   docker compose up -d --build
+
+services:
+  grocer:
+    build: .
+    image: grocer:local
+    container_name: grocer
+    restart: unless-stopped
+    env_file: stack.env
+    ports:
+      - "8083:8080"
+    volumes:
+      - grocer-data:/data
+
+volumes:
+  grocer-data:

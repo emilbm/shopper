@@ -1,0 +1,72 @@
+/*
+ * Grocer — used in two places: at the kitchen counter planning, and in a shop
+ * aisle with a phone in one hand and a basket in the other. So it follows the
+ * system's light or dark setting, keeps big touch targets, and makes a ticked
+ * line unmistakable at arm's length.
+ */
+
+:root {
+  --bg: #f6f7f4;
+  --surface: #ffffff;
+  --surface-2: #f0f2ee;
+  --surface-3: #e6e9e3;
+  --border: #dde1d9;
+  --border-strong: #c5cbc0;
+
+  --text: #1b2119;
+  --muted: #5c665a;
+  --faint: #8a9387;
+
+  --accent: #2f8f46;
+  --accent-dim: #8cc79b;
+  --accent-ink: #ffffff;
+  --accent-text: #23703a;
+  --good: #2f8f46;
+  --good-text: #23703a;
+  --danger: #c93a32;
+  --danger-text: #a8302a;
+  --warn: #b7791f;
+  --warn-text: #8a5a12;
+  --ai: #7b5cd6;
+  --scrim: rgba(20, 24, 18, 0.42);
+
+  --radius: 12px;
+  --radius-lg: 18px;
+  --tap: 48px;
+
+  --gutter: 16px;
+  --header-h: 56px;
+  --nav-h: 60px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101410;
+    --surface: #171c17;
+    --surface-2: #1e251e;
+    --surface-3: #283028;
+    --border: #2a332a;
+    --border-strong: #3b463b;
+
+    --text: #e5ece3;
+    --muted: #93a191;
+    --faint: #687466;
+
+    --accent: #4cc06a;
+    --accent-dim: #2c6d3c;
+    --accent-ink: #06160b;
+    --accent-text: #8fe0a3;
+    --good: #4cc06a;
+    --good-text: #8fe0a3;
+    --danger: #f2655c;
+    --danger-text: #ff9a94;
+    --warn: #d29922;
+    --warn-text: #edc06a;
+    --ai: #a68cff;
+    --scrim: rgba(0, 0, 0, 0.62);
+
+    color-scheme: dark;
+  }
+}

@@ -1,0 +1,711 @@
+/* --------------------------------------------------------- shopping list */
+
+.quickadd {
+  display: flex;
+  gap: 8px;
+}
+
+.quickadd .input {
+  min-width: 0;
+}
+
+.contributors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.chip--removable {
+  padding-right: 3px;
+  color: var(--text);
+}
+
+.chip--removable button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chip--button {
+  cursor: pointer;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 0.82rem;
+}
+
+.line {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+
+.line:last-child {
+  border-bottom: none;
+}
+
+.line__tick {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-height: 56px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--accent-ink);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.line--done .tick {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.line__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 14px 8px 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.line__name {
+  font-weight: 600;
+}
+
+.line__amount {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.line__meta {
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+
+.line--done .line__name {
+  text-decoration: line-through;
+  color: var(--faint);
+}
+
+.line--done .line__amount {
+  color: var(--faint);
+}
+
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+/* Each aisle is its own <section>, so its heading is a first child — but it
+   still needs the full gap above it. */
+section > .section-title:first-child {
+  margin-top: 22px;
+}
+
+/* ------------------------------------------------------------- AI accent */
+
+.btn--ai {
+  background: color-mix(in srgb, var(--ai) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--ai) 45%, transparent);
+  color: var(--ai);
+}
+
+.spinner--inline {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-width: 2px;
+}
+
+/* ---------------------------------------------------------------- lists */
+
+.list__row--on {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.list__row--compact {
+  min-height: 48px;
+  padding: 8px 14px;
+}
+
+.picker {
+  max-height: 46dvh;
+  overflow-y: auto;
+}
+
+/* ------------------------------------------------------------- editors */
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.entry__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 80px;
+  gap: 6px;
+}
+
+.entry__side {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.input--sm {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 0.88rem;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepper .btn {
+  min-width: 44px;
+  min-height: 40px;
+  font-size: 1.2rem;
+}
+
+.stepper__value {
+  min-width: 2.2em;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+}
+
+.segmented button {
+  min-height: 40px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmented button.on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* --------------------------------------------------------- recipe view */
+
+.ingredients {
+  list-style: none;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ingredients li {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  gap: 10px;
+}
+
+.ingredients__amount {
+  color: var(--muted);
+  text-align: right;
+}
+
+.method {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+a.chip {
+  text-decoration: none;
+}
+
+@media (min-width: 720px) {
+  .main {
+    padding-bottom: calc(var(--nav-h) + 40px);
+  }
+}
+
+/* ------------------------------------------------------------ navigation */
+
+.nav a {
+  position: relative;
+}
+
+.nav__brand,
+.nav__hint {
+  display: none;
+}
+
+/* On a phone the count sits on the cart icon as a badge. */
+.nav__count {
+  position: absolute;
+  top: 6px;
+  left: calc(50% + 6px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  font: 600 0.72rem/1.4 ui-monospace, 'Cascadia Mono', Menlo, monospace;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ side panel */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.panel__title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0;
+}
+
+.panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.92rem;
+}
+
+.panel__scroll {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.panel__scroll .panel__row:first-child {
+  border-top: none;
+}
+
+.panel__link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.panel__link:hover {
+  text-decoration: underline;
+}
+
+.panel a.tiny {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.mini-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mini-stepper button {
+  width: 22px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mini-stepper button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* ================================================================ laptop */
+
+@media (min-width: 900px) {
+  :root {
+    --tap: 40px;
+    --sidebar: 228px;
+  }
+
+  body {
+    font-size: 15px;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar) minmax(0, 1fr);
+    max-width: none;
+    margin: 0;
+  }
+
+  /* The bottom tab bar becomes a sidebar. */
+  .nav {
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: none;
+    margin: 0;
+    padding: 18px 12px;
+    background: var(--surface);
+    backdrop-filter: none;
+    border-top: none;
+    border-right: 1px solid var(--border);
+  }
+
+  .nav__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px 18px;
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  .nav a {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 0.93rem;
+    letter-spacing: 0;
+  }
+
+  .nav a svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .nav a:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  .nav a.active {
+    background: color-mix(in srgb, var(--accent) 13%, transparent);
+    color: var(--accent-text);
+  }
+
+  .nav__count {
+    position: static;
+    margin-left: auto;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent-text);
+  }
+
+  .nav__hint {
+    display: block;
+    margin-top: auto;
+    padding: 0 10px;
+    font-size: 0.75rem;
+    line-height: 2;
+    color: var(--faint);
+  }
+
+  .content {
+    min-width: 0;
+  }
+
+  .header {
+    min-height: 64px;
+    padding: 12px 32px;
+  }
+
+  .header h1 {
+    font-size: 1.35rem;
+  }
+
+  .main {
+    max-width: 1240px;
+    padding: 24px 32px 56px;
+  }
+
+  .main--narrow {
+    max-width: 880px;
+  }
+
+  /* Pointer devices get hover feedback the touch layout has no use for. */
+  .btn:hover:not(:disabled) {
+    filter: brightness(0.96);
+  }
+
+  .list__row:hover,
+  .line__body:hover {
+    background: var(--surface-2);
+  }
+
+  .list__row {
+    min-height: 52px;
+  }
+
+  /* Bottom sheets become centred dialogs. */
+  .sheet-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .sheet {
+    max-width: 520px;
+    max-height: 86dvh;
+    border: 1px solid var(--border-strong);
+    border-radius: 18px;
+    padding: 22px 24px 24px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+  }
+
+  .sheet__grip {
+    display: none;
+  }
+
+  /* ---- shopping list: the list, and the add panel beside it */
+
+  .shop {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 28px;
+    align-items: start;
+    max-width: 1440px;
+  }
+
+  .shop__side {
+    position: sticky;
+    top: 88px;
+    max-height: calc(100dvh - 108px);
+    overflow-y: auto;
+  }
+
+  .line__tick {
+    width: 48px;
+    min-height: 46px;
+  }
+
+  .tick {
+    width: 22px;
+    height: 22px;
+  }
+
+  .line__body {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-right: 16px;
+  }
+
+  .line__meta {
+    flex: 0 1 45%;
+    text-align: right;
+  }
+
+  .basket {
+    opacity: 0.85;
+  }
+
+  /* ---- recipes */
+
+  .recipe-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    background: none;
+    border: none;
+    overflow: visible;
+  }
+
+  .recipe-grid .list__row {
+    align-items: flex-start;
+    min-height: 92px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  .recipe-grid .list__row:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .recipe-grid .list__row:hover {
+    border-color: var(--accent-dim);
+    background: var(--surface);
+  }
+
+  .recipe-layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+
+  .recipe-layout__side {
+    position: sticky;
+    top: 88px;
+  }
+
+  .recipe-layout__main > .section-title:first-child {
+    margin-top: 4px;
+  }
+
+  .method {
+    padding: 20px 24px;
+    font-size: 1.02rem;
+    line-height: 1.75;
+  }
+
+  /* An ingredient row on one line: item, amount, unit, note, controls. */
+  .entry {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .entry__main {
+    flex: 1 1 60%;
+    grid-template-columns: minmax(0, 1fr) 76px 86px;
+  }
+
+  .entry__side {
+    flex: 1 1 40%;
+  }
+
+  .entry .input {
+    min-height: 38px;
+    padding: 7px 10px;
+  }
+
+  /* ---- lists and items */
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+    align-items: start;
+  }
+
+  .cards-grid .card + .card {
+    margin-top: 0;
+  }
+
+  .item-columns {
+    columns: 3 250px;
+    column-gap: 20px;
+  }
+
+  .item-columns section {
+    break-inside: avoid;
+  }
+}
+
+/* Room for the aisles to sit in two columns beside the panel. */
+@media (min-width: 1360px) {
+  .aisles {
+    columns: 2;
+    column-gap: 20px;
+  }
+
+  .aisle {
+    break-inside: avoid;
+  }
+
+  .aisle > .section-title:first-child {
+    margin-top: 14px;
+  }
+}
+
+/* A button that reads as a link: a secondary action inside a row. */
+.linkish {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.linkish:hover:not(:disabled) {
+  text-decoration: underline;
+}
