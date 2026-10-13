@@ -78,6 +78,34 @@ const categoriesShape = z.object({
   items: z.array(z.object({ id: z.coerce.number().int(), category: z.string() })),
 });
 
+const picksShape = z.object({
+  picks: z.array(
+    z.object({
+      line: z.coerce.number().int(),
+      productId: z.union([z.string(), z.number()]).nullable().transform((v) => (v === null ? null : String(v))),
+      quantity: z.coerce.number().int().min(1).max(50).catch(1),
+      reason: z.string().catch(''),
+    }),
+  ),
+});
+
+export interface PickRequest {
+  line: number;
+  item: string;
+  /** What the list wants, as written on it ("1,5 kg", "6"). */
+  wants: string;
+  note: string;
+  candidates: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    price: number;
+    inStock: boolean;
+    favourite: boolean;
+    offer?: string;
+  }>;
+}
+
 export type ParsedEntry = z.infer<typeof entry> & NamedEntry;
 export type ParsedRecipe = z.infer<typeof recipeShape>;
 
@@ -198,6 +226,37 @@ ${ENTRY_RULES}
 If they name a dish or occasion instead of products ("noget til tacos", "stuff for pancakes"), expand it into the groceries it usually needs and put the dish in each entry's note.
 ${knownItems(catalogue)}`;
       return (await chatJson(itemsShape, system, text.slice(0, 5_000))).items;
+    },
+
+    /**
+     * For each shopping line, the Nemlig product to buy and how many packs.
+     * Every line is decided in one call; a pick naming a product that was not
+     * among that line's candidates is dropped rather than trusted.
+     */
+    async pickProducts(requests: PickRequest[]): Promise<Map<number, { productId: string | null; quantity: number; reason: string }>> {
+      const out = new Map<number, { productId: string | null; quantity: number; reason: string }>();
+      if (!requests.length) return out;
+      const system = `You do a Danish household's online grocery shop at Nemlig. For each shopping-list line you get the item, how much the list wants, and the products Nemlig's search found. Pick the one product to buy and how many packs. Reply with a JSON object {"picks": [{"line": number, "productId": string | null, "quantity": integer, "reason": string}, ...]}, one pick per line.
+Rules:
+- Prefer products marked favourite: the household buys those.
+- Pick what the item plainly means: ordinary "Hvedemel", not tipo 00 or manitoba; ordinary milk, not lactose-free — unless the item or note says otherwise.
+- Only pick products that are inStock.
+- quantity is the number of packs. Use each candidate's description for the pack size ("1 kg", "6 stk.") and buy enough to cover what the list wants, rounding up. With no amount wanted, buy 1.
+- Take a multi-buy offer only when the list needs that many anyway.
+- productId null when nothing fits; say why in reason.
+- reason: a few words, in English.`;
+      const result = await chatJson(picksShape, system, JSON.stringify(requests));
+      const allowed = new Map(requests.map((r) => [r.line, new Set(r.candidates.map((c) => c.id))]));
+      for (const pick of result.picks) {
+        const ids = allowed.get(pick.line);
+        if (!ids) continue;
+        out.set(pick.line, {
+          productId: pick.productId && ids.has(pick.productId) ? pick.productId : null,
+          quantity: pick.quantity,
+          reason: pick.reason,
+        });
+      }
+      return out;
     },
 
     /** Put items in aisles. Returns only the assignments that name a real aisle. */

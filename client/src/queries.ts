@@ -16,6 +16,7 @@ export const useMeta = () => useQuery({ queryKey: keys.meta, queryFn: api.meta, 
 
 /** Whether the AI features should be offered at all. */
 export const useAiEnabled = () => useMeta().data?.ai.enabled ?? false;
+export const useNemligEnabled = () => useMeta().data?.nemlig.enabled ?? false;
 
 export const useShop = () => useQuery({ queryKey: keys.shop, queryFn: api.shop.get });
 export const useItems = () => useQuery({ queryKey: keys.items, queryFn: api.items.list });

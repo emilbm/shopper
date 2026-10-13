@@ -12,6 +12,7 @@ import {
   ErrorBanner,
   IconBook,
   IconCheck,
+  IconCart,
   IconClose,
   IconList,
   IconPot,
@@ -22,12 +23,13 @@ import {
   useConfirm,
 } from '../components/ui';
 import { isTyping } from '../keys';
-import { useAiEnabled, useDinnerMutation, useDinners, useLists, useRecipes, useShop, useShopMutation } from '../queries';
+import { useAiEnabled, useNemligEnabled, useDinnerMutation, useDinners, useLists, useRecipes, useShop, useShopMutation } from '../queries';
 import { useWide } from '../useWide';
 
 export default function ShopPage() {
   const shop = useShop();
   const aiEnabled = useAiEnabled();
+  const nemligEnabled = useNemligEnabled();
   const { confirm, dialog } = useConfirm();
   const wide = useWide();
   const quickAdd = useRef<HTMLInputElement>(null);
@@ -119,6 +121,11 @@ export default function ShopPage() {
             </span>
           )}
         </h1>
+        {nemligEnabled && open.length > 0 && (
+          <Link className="btn btn--primary btn--sm" to="/shop/nemlig">
+            <IconCart size={16} /> Send to Nemlig
+          </Link>
+        )}
         {wide && done.length > 0 && (
           <button className="btn btn--ghost btn--sm" onClick={() => clear.mutate(true)}>
             Clear {done.length} ticked

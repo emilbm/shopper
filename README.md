@@ -102,17 +102,34 @@ What it is used for:
 The prompts are given the existing item names, so the model writes "Mælk"
 rather than inventing "Sødmælk" next to it.
 
-### Nemlig, later
+### Nemlig
 
-The plan is for the shopping list to end up in a Nemlig.com basket. The
-[nemlig-mcp](../nemlig-mcp) server already exposes search, favourites and the
-basket as MCP tools, and the harness has an MCP registry, so the likely shape
-is: register nemlig-mcp with the harness, and have this app ask the harness to
-run a tool-using completion over the shopping list ("find each of these, prefer
-my favourites and current offers, fill the basket"). Nothing in this app talks
-to Nemlig yet. When it does, items will want a remembered Nemlig product id so
-the second shop does not search again — a new migration, not a change to the
-existing tables.
+**Send to Nemlig** on the shopping list turns every line still to get into a
+Nemlig.com basket. Nothing is ordered: delivery and checkout stay at Nemlig.
+
+1. **Plan.** Each line is searched at Nemlig. Items bought before go straight
+   to the product they were bought as. The rest go to the model in one call,
+   which picks the product the household means (favourites first, ordinary
+   flour over tipo 00, in stock). The number of packs comes from arithmetic
+   wherever the pack size is known — 750 g of mince in 500 g packs is two — and
+   from the model only where it is not.
+2. **Review.** One row per line: the proposal, the other products the search
+   found to switch to, the number of packs, and why. Lines with nothing found
+   are left out.
+3. **Fill.** Quantities are set, never added, and never lowered: if the basket
+   already holds more of something, that stays, so filling twice never doubles
+   up. What went in is ticked off the list, and each item remembers its
+   product for next time (forget it from the item's sheet under Items).
+
+Grocer never holds Nemlig credentials. It talks MCP to the harness's gateway
+(`/mcp/` beside `AI_BASE_URL`) with its own harness key, scoped to the
+`nemlig` server with `x-mcp-servers`; the harness fronts
+[nemlig-mcp](../nemlig-mcp), which holds the account. The key needs access to
+that server in LiteLLM. `GET /api/nemlig/status` checks the whole path.
+
+Pack sizes come from the product descriptions nemlig-mcp passes on
+("1 kg / Valsemøllen"); an older nemlig-mcp that drops them still works, but
+the model then guesses the number of packs.
 
 ## Running it
 

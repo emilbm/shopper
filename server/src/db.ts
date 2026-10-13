@@ -135,6 +135,14 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_shop_sources_line ON shop_sources(line_id);
   CREATE INDEX idx_shop_sources_ref ON shop_sources(kind, ref_id);
   `,
+
+  // 3 — the Nemlig product each item was last bought as, so the next shop
+  // goes straight to it instead of searching and asking the model again
+  `
+  ALTER TABLE items ADD COLUMN nemlig_product_id TEXT;
+  ALTER TABLE items ADD COLUMN nemlig_product_name TEXT;
+  ALTER TABLE items ADD COLUMN nemlig_description TEXT;
+  `,
 ];
 
 export function openDatabase(path: string): Db {

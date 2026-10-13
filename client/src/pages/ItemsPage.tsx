@@ -158,6 +158,26 @@ function ItemSheet({ item, all, onClose }: { item: Item; all: Item[]; onClose: (
           Save
         </button>
 
+        {item.nemlig && (
+          <>
+            <h2 className="section-title">At Nemlig</h2>
+            <div className="row">
+              <span className="grow small">
+                Bought as <strong>{item.nemlig.name}</strong>
+                {item.nemlig.description && <span className="muted"> · {item.nemlig.description}</span>}
+              </span>
+              <button
+                className="btn btn--sm"
+                disabled={busy}
+                onClick={() => void run(() => api.items.forgetNemlig(item.id))}
+                title="The next Send to Nemlig searches for this item afresh"
+              >
+                Forget
+              </button>
+            </div>
+          </>
+        )}
+
         <h2 className="section-title">Duplicate?</h2>
         <div className="row">
           <select className="select grow" value={mergeInto} onChange={(e) => setMergeInto(e.target.value)} aria-label="Merge into">

@@ -709,3 +709,104 @@ kbd {
 .linkish:hover:not(:disabled) {
   text-decoration: underline;
 }
+
+/* --------------------------------------------------------- send to Nemlig */
+
+.main--nemlig {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 120px);
+}
+
+.nemlig-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nemlig-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'line qty'
+    'product product'
+    'why why';
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.nemlig-row--off {
+  opacity: 0.55;
+}
+
+.nemlig-row__line {
+  grid-area: line;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.nemlig-row__line input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.nemlig-row__name {
+  font-weight: 600;
+}
+
+.nemlig-row__product {
+  grid-area: product;
+  min-width: 0;
+}
+
+.nemlig-row__qty {
+  grid-area: qty;
+}
+
+.nemlig-row__why {
+  grid-area: why;
+}
+
+.nemlig-row__why .chip {
+  padding: 1px 7px;
+  font-size: 0.7rem;
+}
+
+.nemligbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px var(--gutter) calc(env(safe-area-inset-bottom) + 12px);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 900px) {
+  /* One line per row: what the list wants, the product, packs, why. */
+  .nemlig-row {
+    grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr) auto;
+    grid-template-areas:
+      'line product qty'
+      '. why why';
+    padding: 10px 14px;
+  }
+
+  .nemligbar {
+    left: var(--sidebar);
+    padding: 12px 32px;
+  }
+}

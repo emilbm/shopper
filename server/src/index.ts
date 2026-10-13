@@ -7,6 +7,7 @@ import { ZodError } from 'zod';
 import { AiError, createAi } from './ai.js';
 import { loadConfig } from './config.js';
 import { openDatabase } from './db.js';
+import { createNemlig, NemligError } from './nemlig.js';
 import { registerRoutes } from './routes.js';
 import { createErrorReporter } from './sentry.js';
 import { createStore } from './store.js';
@@ -40,6 +41,7 @@ const reporter = createErrorReporter(
 );
 
 const ai = createAi(config.ai);
+const nemlig = createNemlig(config.nemlig, config.ai.apiKey);
 const db = openDatabase(config.dbPath);
 
 /**
@@ -100,7 +102,8 @@ app.setErrorHandler((error: FastifyError | Error, req, reply) => {
   if (status >= 500) {
     req.log.error({ err: error }, 'request failed');
     const eventId = reporter.capture(error, {
-      level: error instanceof AiError ? 'warning' : 'error',
+      // The harness or Nemlig being away is worth knowing about, not an app bug.
+      level: error instanceof AiError || error instanceof NemligError ? 'warning' : 'error',
       request: { method: req.method, url: req.url },
       tags: { route: req.routeOptions.url ?? 'unknown' },
     });
@@ -112,7 +115,7 @@ app.setErrorHandler((error: FastifyError | Error, req, reply) => {
   return reply.status(status).send({ error: error.message });
 });
 
-await registerRoutes(app, { store, ai, reporter, config, categoriseNow });
+await registerRoutes(app, { store, ai, nemlig, reporter, config, categoriseNow });
 
 const clientDir = config.clientDir || resolve(here, '../../../../client/dist');
 if (existsSync(join(clientDir, 'index.html'))) {
@@ -133,7 +136,11 @@ if (existsSync(join(clientDir, 'index.html'))) {
 }
 
 app.log.info(
-  { ai: ai.enabled ? { baseUrl: config.ai.baseUrl, model: config.ai.model } : 'disabled', db: config.dbPath },
+  {
+    ai: ai.enabled ? { baseUrl: config.ai.baseUrl, model: config.ai.model } : 'disabled',
+    nemlig: nemlig.enabled ? { mcpUrl: config.nemlig.mcpUrl, server: config.nemlig.server } : 'disabled',
+    db: config.dbPath,
+  },
   'grocer starting',
 );
 

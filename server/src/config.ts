@@ -6,6 +6,15 @@ function str(env: NodeJS.ProcessEnv, name: string, fallback: string): string {
   return v === undefined || v === '' ? fallback : v;
 }
 
+function bool(env: NodeJS.ProcessEnv, name: string, fallback: boolean, problems: string[]): boolean {
+  const v = env[name];
+  if (v === undefined || v === '') return fallback;
+  if (/^(1|true|yes|on)$/i.test(v)) return true;
+  if (/^(0|false|no|off)$/i.test(v)) return false;
+  problems.push(`${name} must be true or false, got "${v}"`);
+  return fallback;
+}
+
 function int(
   env: NodeJS.ProcessEnv,
   name: string,
@@ -58,6 +67,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       timeoutMs: int(env, 'AI_TIMEOUT_SECONDS', 60, problems, { min: 5, max: 600 }) * 1000,
     },
 
+    nemlig: {
+      // Nemlig is reached through the harness's MCP gateway with the same key
+      // as the AI, so it is on whenever the AI is, unless switched off here.
+      enabled: bool(env, 'NEMLIG_ENABLED', true, problems),
+      // Defaults to the gateway beside AI_BASE_URL: http://ai-ops:4000/mcp/.
+      mcpUrl: str(env, 'NEMLIG_MCP_URL', ''),
+      // The server's alias in the harness's mcp_servers, sent as x-mcp-servers.
+      server: str(env, 'NEMLIG_MCP_SERVER', 'nemlig'),
+      timeoutMs: int(env, 'NEMLIG_TIMEOUT_SECONDS', 60, problems, { min: 5, max: 600 }) * 1000,
+    },
+
     sentry: {
       // Empty disables reporting. GlitchTip ingests the Sentry envelope format.
       dsn: str(env, 'SENTRY_DSN', ''),
@@ -72,11 +92,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     try {
       const u = new URL(cfg.ai.baseUrl);
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error();
+      if (!cfg.nemlig.mcpUrl) cfg.nemlig.mcpUrl = new URL('/mcp/', u).toString();
     } catch {
       problems.push(`AI_BASE_URL must be an http(s) URL, got "${cfg.ai.baseUrl}"`);
     }
     if (!cfg.ai.apiKey) problems.push('AI_API_KEY is required when AI_BASE_URL is set');
   }
+  // Without the harness there is no gateway to reach Nemlig through.
+  if (!cfg.ai.baseUrl || !cfg.ai.apiKey) cfg.nemlig.enabled = false;
 
   // Fail at startup on a malformed DSN, rather than silently dropping the
   // first real error weeks later.

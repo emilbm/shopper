@@ -1,5 +1,8 @@
 import type {
   Dinner,
+  NemligApplyEntry,
+  NemligApplyResult,
+  NemligPlan,
   IngredientInput,
   Item,
   Meta,
@@ -113,6 +116,7 @@ export const api = {
     remove: (id: number) => request<void>('DELETE', `/items/${id}`),
     merge: (id: number, intoId: number) => request<Item>('POST', `/items/${id}/merge`, { intoId }),
     categorise: () => request<{ categorised: number }>('POST', '/items/categorise', {}),
+    forgetNemlig: (id: number) => request<void>('DELETE', `/items/${id}/nemlig`),
   },
 
   recipes: {
@@ -130,6 +134,11 @@ export const api = {
     create: (input: ListInput) => request<StapleList>('POST', '/lists', input),
     update: (id: number, input: ListInput) => request<StapleList>('PUT', `/lists/${id}`, input),
     remove: (id: number) => request<void>('DELETE', `/lists/${id}`),
+  },
+
+  nemlig: {
+    plan: () => request<NemligPlan>('POST', '/nemlig/plan', {}),
+    apply: (entries: NemligApplyEntry[]) => request<NemligApplyResult>('POST', '/nemlig/apply', { entries }),
   },
 
   dinners: {

@@ -31,6 +31,11 @@ services:
       # Named volume by default. Swap for a bind mount (- /srv/grocer:/data)
       # if it's easier to fold into the host's backup job.
       - grocer-data:/data
+      # GlitchTip at https://glitch.bech.lol is served by its VM's Caddy with
+      # Caddy's own CA, which Node does not trust: events fail with
+      # UNABLE_TO_GET_ISSUER_CERT_LOCALLY and are dropped silently. Mount that
+      # Caddy's root.crt and set NODE_EXTRA_CA_CERTS=/certs/glitch-root.crt.
+      # - /home/bech/caddy-glitch-root.crt:/certs/glitch-root.crt:ro
     # If the container can't resolve the AI harness by name, map it here — or
     # use its IP in AI_BASE_URL instead.
     # extra_hosts:

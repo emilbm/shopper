@@ -101,3 +101,21 @@ test('a method splits into steps, with short unpunctuated lines as headings', as
     { kind: 'step', text: 'Servér' },
   ]);
 });
+
+test('pack sizes come out of Nemlig descriptions and decide how many to buy', async () => {
+  const { parsePackSize, packsNeeded } = await import('../server/dist/shared/units.js');
+  assert.deepEqual(parsePackSize('1 kg / Valsemøllen'), { quantity: 1, unit: 'kg' });
+  assert.deepEqual(parsePackSize('Letmælk 0,5% 1 l'), { quantity: 1, unit: 'l' });
+  assert.deepEqual(parsePackSize('4 x 125 g / Galbani'), { quantity: 500, unit: 'g' });
+  assert.deepEqual(parsePackSize('6 stk. / Danæg'), { quantity: 6, unit: 'stk' });
+  assert.equal(parsePackSize('Banan'), null);
+
+  assert.equal(packsNeeded([{ quantity: 1.5, unit: 'kg' }], { quantity: 1, unit: 'kg' }), 2);
+  assert.equal(packsNeeded([{ quantity: 500, unit: 'g' }], { quantity: 1, unit: 'kg' }), 1);
+  assert.equal(packsNeeded([{ quantity: 2.75, unit: 'l' }], { quantity: 1, unit: 'l' }), 3);
+  assert.equal(packsNeeded([{ quantity: 1.01, unit: 'l' }], { quantity: 1, unit: 'l' }), 1);
+  assert.equal(packsNeeded([{ quantity: 10, unit: '' }], { quantity: 6, unit: 'stk' }), 2);
+  assert.equal(packsNeeded([{ quantity: 6, unit: '' }], null), 6);
+  assert.equal(packsNeeded([{ quantity: 2, unit: 'dåse' }], { quantity: 400, unit: 'g' }), 1);
+  assert.equal(packsNeeded([{ quantity: null, unit: '' }], { quantity: 1, unit: 'kg' }), 1);
+});

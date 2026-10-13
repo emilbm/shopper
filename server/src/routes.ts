@@ -6,6 +6,7 @@ import { parseIngredientLine, splitItems } from '../../shared/units.js';
 import { AiError, type Ai } from './ai.js';
 import type { Config } from './config.js';
 import { importRecipe } from './importer.js';
+import { applyToBasket, planShop, type Nemlig } from './nemlig.js';
 import type { ErrorReporter } from './sentry.js';
 import type { Store } from './store.js';
 
@@ -65,13 +66,14 @@ const clientErrorBody = z.object({
 export interface RouteDeps {
   store: Store;
   ai: Ai;
+  nemlig: Nemlig;
   reporter: ErrorReporter;
   config: Config;
   categoriseNow: () => Promise<number>;
 }
 
 export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
-  const { store, ai, reporter, config } = deps;
+  const { store, ai, nemlig, reporter, config } = deps;
   const reportAi = (err: unknown) =>
     reporter.capture(err, { level: 'warning', tags: { feature: 'ai' } });
 
@@ -81,6 +83,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
     version: config.version,
     builtAt: config.builtAt,
     ai: { enabled: ai.enabled, model: ai.model },
+    nemlig: { enabled: nemlig.enabled },
     errorReporting: reporter.enabled,
   }));
 
@@ -280,6 +283,46 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   app.post('/api/shop/clear', async (req) => {
     const { onlyChecked } = z.object({ onlyChecked: z.boolean().default(true) }).parse(req.body ?? {});
     return store.shop.clear(onlyChecked);
+  });
+
+  /* ------------------------------------------------------------ Nemlig */
+
+  /** Whether the harness's gateway answers and offers the Nemlig tools. */
+  app.get('/api/nemlig/status', async () => {
+    await nemlig.withSession(async () => undefined);
+    return { ok: true, server: nemlig.server };
+  });
+
+  /** Proposals for review: nothing is put in the basket here. */
+  app.post('/api/nemlig/plan', async () =>
+    planShop({ store, ai, nemlig, onAiFailure: (err) => reportAi(err) }),
+  );
+
+  app.post('/api/nemlig/apply', async (req) => {
+    const { entries } = z
+      .object({
+        entries: z
+          .array(
+            z.object({
+              lineId: z.number().int().positive(),
+              itemId: z.number().int().positive(),
+              productId: z.string().min(1).max(40),
+              productName: z.string().max(200),
+              description: z.string().max(200).default(''),
+              quantity: z.number().int().min(1).max(50),
+            }),
+          )
+          .min(1)
+          .max(200),
+      })
+      .parse(req.body);
+    return applyToBasket(entries, { store, nemlig });
+  });
+
+  /** Forget what an item was bought as, so the next shop searches for it afresh. */
+  app.delete('/api/items/:id/nemlig', async (req, reply) => {
+    store.items.setNemlig(idParam.parse(req.params).id, null);
+    return reply.status(204).send();
   });
 
   /* ------------------------------------------------------------ errors */

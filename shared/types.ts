@@ -9,6 +9,15 @@ export interface Item {
   notes: string;
   /** How many recipes and lists use it — an item in use cannot be deleted. */
   usage: number;
+  /** The Nemlig product it was last bought as, if any. */
+  nemlig: RememberedProduct | null;
+}
+
+export interface RememberedProduct {
+  productId: string;
+  name: string;
+  /** Pack size as Nemlig writes it ("1 kg / Valsemøllen"), when it said. */
+  description: string;
 }
 
 export interface IngredientInput {
@@ -131,9 +140,72 @@ export interface Dinner {
   onShop: boolean;
 }
 
+/* ------------------------------------------------------------- Nemlig */
+
+/** A Nemlig product as the Nemlig MCP describes it. */
+export interface NemligProduct {
+  id: string;
+  name: string;
+  price: number;
+  inStock: boolean;
+  deliverable: boolean;
+  labels: string[];
+  description?: string;
+  brand?: string;
+  offer?: { description: string; minQuantity?: number; offerPrice?: number };
+  /** One of the account's frequently bought products. */
+  favourite?: boolean;
+}
+
+/** One shopping line, and the product and number of packs proposed for it. */
+export interface NemligPlanLine {
+  lineId: number;
+  itemId: number;
+  name: string;
+  /** What the list asks for, as shown on it ("1,5 kg"). */
+  amount: string;
+  product: NemligProduct | null;
+  quantity: number;
+  /** How the proposal was made, so the review can say how far to trust it. */
+  source: 'remembered' | 'ai' | 'favourite' | 'first' | 'none';
+  reason: string;
+  /** Other products the search found, to switch to. */
+  alternatives: NemligProduct[];
+}
+
+export interface NemligPlan {
+  lines: NemligPlanLine[];
+  /** Set when the model could not help and the proposals are plain guesses. */
+  warning?: string;
+}
+
+export interface NemligApplyEntry {
+  lineId: number;
+  itemId: number;
+  productId: string;
+  productName: string;
+  description: string;
+  quantity: number;
+}
+
+export interface NemligApplyResult {
+  results: Array<{
+    productId: string;
+    name: string;
+    /** What the basket holds now. */
+    quantity: number;
+    /** What it held before, when that was already something. */
+    previous: number;
+    ok: boolean;
+    error?: string;
+  }>;
+  basketTotal: number | null;
+}
+
 export interface Meta {
   version: string;
   builtAt: string | null;
   ai: { enabled: boolean; model: string | null };
+  nemlig: { enabled: boolean };
   errorReporting: boolean;
 }

@@ -227,3 +227,43 @@ export function splitItems(text: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+/* ------------------------------------------------------------ packs */
+
+/**
+ * The pack size in a product's description or name: "1 kg / Valsemøllen",
+ * "Letmælk 1 l", "4 x 125 g" (500 g), "6 stk.". Null when it does not say.
+ */
+export function parsePackSize(text: string | undefined | null): Amount | null {
+  if (!text) return null;
+  const t = text.toLowerCase().replace(',', '.');
+  const multi = /(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(kg|g|l|dl|cl|ml)\b/.exec(t);
+  if (multi) return { quantity: Number(multi[1]) * Number(multi[2]), unit: normaliseUnit(multi[3]) };
+  const single = /(\d+(?:\.\d+)?)\s*(kg|g|l|dl|cl|ml|stk)\b/.exec(t);
+  if (single) return { quantity: Number(single[1]), unit: normaliseUnit(single[2]) };
+  return null;
+}
+
+/**
+ * How many packs cover what a shopping line asks for. Amounts that can be
+ * compared with the pack are divided and rounded up; a plain count with no
+ * pack size is taken as that many; anything else is one pack. Never zero.
+ */
+export function packsNeeded(amounts: Amount[], pack: Amount | null): number {
+  const wanted = amounts.filter((a) => a.quantity !== null && a.quantity > 0);
+  if (!wanted.length) return 1;
+  if (pack?.quantity) {
+    const packFamily = familyOf(normaliseUnit(pack.unit));
+    for (const a of wanted) {
+      const f = familyOf(normaliseUnit(a.unit));
+      if (f.family === packFamily.family) {
+        const need = (a.quantity! * f.factor) / (pack.quantity * packFamily.factor);
+        // A hair over a whole pack is rounding, not a reason for another.
+        return Math.max(1, Math.ceil(need - 0.02));
+      }
+    }
+  }
+  const count = wanted.find((a) => familyOf(normaliseUnit(a.unit)).family === 'count');
+  if (count && !pack) return Math.max(1, Math.ceil(count.quantity!));
+  return 1;
+}

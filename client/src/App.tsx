@@ -8,6 +8,7 @@ import CookPage from './pages/CookPage';
 import ItemsPage from './pages/ItemsPage';
 import ListEditPage from './pages/ListEditPage';
 import ListsPage from './pages/ListsPage';
+import NemligPage from './pages/NemligPage';
 import RecipeEditPage from './pages/RecipeEditPage';
 import RecipeImportPage from './pages/RecipeImportPage';
 import RecipePage from './pages/RecipePage';
@@ -56,6 +57,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/shop" element={<ShopPage />} />
+          <Route path="/shop/nemlig" element={<NemligPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<RecipeEditPage />} />
           <Route path="/recipes/import" element={<RecipeImportPage />} />

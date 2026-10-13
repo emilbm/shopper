@@ -3,6 +3,7 @@ import type {
   Dinner,
   IngredientInput,
   Item,
+  RememberedProduct,
   LineSource,
   Recipe,
   RecipeIngredient,
@@ -63,13 +64,41 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
   const items = {
     list(): Item[] {
       return db
-        .all<{ id: number; name: string; category: string | null; notes: string; usage: number }>(
+        .all<{
+          id: number;
+          name: string;
+          category: string | null;
+          notes: string;
+          usage: number;
+          nemlig_product_id: string | null;
+          nemlig_product_name: string | null;
+          nemlig_description: string | null;
+        }>(
           `SELECT i.id, i.name, i.category, i.notes,
+                  i.nemlig_product_id, i.nemlig_product_name, i.nemlig_description,
                   (SELECT COUNT(*) FROM recipe_ingredients r WHERE r.item_id = i.id)
                 + (SELECT COUNT(*) FROM staple_entries s WHERE s.item_id = i.id) AS usage
              FROM items i`,
         )
+        .map(({ nemlig_product_id, nemlig_product_name, nemlig_description, ...item }) => ({
+          ...item,
+          nemlig: nemlig_product_id
+            ? { productId: nemlig_product_id, name: nemlig_product_name ?? '', description: nemlig_description ?? '' }
+            : null,
+        }))
         .sort(sortByAisle);
+    },
+
+    /** Remember what an item was bought as at Nemlig, or forget it with null. */
+    setNemlig(id: number, product: RememberedProduct | null): void {
+      const { changes } = db.run(
+        'UPDATE items SET nemlig_product_id = ?, nemlig_product_name = ?, nemlig_description = ? WHERE id = ?',
+        product?.productId ?? null,
+        product?.name ?? null,
+        product?.description ?? null,
+        id,
+      );
+      if (!changes) throw new NotFoundError('No such item');
     },
 
     get(id: number): Item {

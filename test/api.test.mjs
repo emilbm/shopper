@@ -11,6 +11,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { z } from 'zod';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const dataDir = mkdtempSync(join(tmpdir(), 'grocer-test-'));
@@ -26,6 +29,18 @@ const RECIPE_PAGE = `<html><head><script type="application/ld+json">
 </script></head><body></body></html>`;
 
 function aiReply(system, user) {
+  if (system.includes('grocery shop at Nemlig')) {
+    // Deliberately wrong on quantity: the pack arithmetic should overrule it.
+    const lines = JSON.parse(user);
+    return {
+      picks: lines.map((l) => ({
+        line: l.line,
+        productId: l.item === 'Hvedemel' ? 'm3' : l.item === 'Mælk' ? 'k1' : null,
+        quantity: 7,
+        reason: 'test pick',
+      })),
+    };
+  }
   if (system.includes('supermarket aisles')) {
     const items = JSON.parse(user);
     return { items: items.map((i) => ({ id: i.id, category: /mælk|ost/i.test(i.name) ? 'dairy' : 'pantry' })) };
@@ -56,6 +71,55 @@ function aiReply(system, user) {
   return {};
 }
 
+/**
+ * The harness's MCP gateway in front of nemlig-mcp: a real MCP server, with the
+ * tool names prefixed the way a multi-server gateway does it.
+ */
+const nemligState = {
+  basket: new Map([['k1', 3]]), // three of the milk are already in the basket
+  sets: [],
+  headers: [],
+};
+
+const PRODUCTS = {
+  hvedemel: [
+    { id: 'm1', name: 'Hvedemel tipo 00', price: 26.25, inStock: true, deliverable: true, labels: [], description: '1 kg / Caputo' },
+    { id: 'm2', name: 'Hvedemel', price: 16.75, inStock: false, deliverable: true, labels: [], description: '2 kg / Valsemøllen' },
+    { id: 'm3', name: 'Hvedemel', price: 9.95, inStock: true, deliverable: true, labels: [], description: '1 kg / Valsemøllen' },
+  ],
+  mælk: [{ id: 'k1', name: 'Letmælk', price: 12.5, inStock: true, deliverable: true, labels: [], description: '1 l / Arla' }],
+};
+
+function fakeNemligServer() {
+  const server = new McpServer({ name: 'fake-nemlig', version: '1' });
+  const json = (payload) => ({ content: [{ type: 'text', text: JSON.stringify(payload) }] });
+  server.registerTool('nemlig-search_products', { inputSchema: { searchterm: z.string() } }, async ({ searchterm }) =>
+    json({ sessionId: 's', searchterm, products: PRODUCTS[searchterm.toLowerCase()] ?? [] }),
+  );
+  server.registerTool('nemlig-get_favourite_products', { inputSchema: {} }, async () =>
+    json({ sessionId: 's', products: [PRODUCTS.mælk[0]] }),
+  );
+  server.registerTool('nemlig-get_basket', { inputSchema: {} }, async () =>
+    json({
+      sessionId: 's',
+      basket: {
+        TotalPrice: [...nemligState.basket.values()].reduce((a, q) => a + q * 10, 0),
+        Lines: [...nemligState.basket].map(([Id, Quantity]) => ({ Id, Quantity })),
+      },
+    }),
+  );
+  server.registerTool(
+    'nemlig-set_basket_quantity',
+    { inputSchema: { productId: z.string(), quantity: z.number() } },
+    async ({ productId, quantity }) => {
+      nemligState.sets.push({ productId, quantity });
+      nemligState.basket.set(productId, quantity);
+      return json({ sessionId: 's', line: { productId, quantity } });
+    },
+  );
+  return server;
+}
+
 let fake;
 let fakeUrl;
 
@@ -64,6 +128,19 @@ function startFake() {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const body = Buffer.concat(chunks).toString();
+
+    if (req.url.startsWith('/mcp')) {
+      nemligState.headers.push({ key: req.headers['x-litellm-api-key'], servers: req.headers['x-mcp-servers'] });
+      const server = fakeNemligServer();
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      res.on('close', () => {
+        void transport.close();
+        void server.close();
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body ? JSON.parse(body) : undefined);
+      return;
+    }
 
     if (req.url === '/v1/chat/completions') {
       assert.equal(req.headers.authorization, 'Bearer test-key');
@@ -446,4 +523,76 @@ test('dinners: one planned without its ingredients can put them on later, once',
   const { body: shop } = await call('POST', '/shop/dinners', { dinnerId: dinner.id });
   assert.deepEqual(shop.lines.find((l) => l.name === 'Svinefars').amounts, [{ quantity: 500, unit: 'g' }]);
   assert.equal((await call('GET', `/dinners/${dinner.id}`)).body.onShop, true);
+});
+
+test('nemlig: a plan proposes products and packs, apply fills the basket, and choices are remembered', async () => {
+  assert.equal((await call('GET', '/meta')).body.nemlig.enabled, true);
+  assert.equal((await call('GET', '/nemlig/status')).status, 200);
+
+  await call('POST', '/shop/clear', { onlyChecked: false });
+  await call('POST', '/shop/items', {
+    entries: [
+      { name: 'Hvedemel', quantity: 1.5, unit: 'kg', note: '' },
+      { name: 'Mælk', quantity: 2, unit: 'l', note: '' },
+      { name: 'Safran', quantity: null, unit: '', note: '' },
+    ],
+  });
+
+  const { body: plan } = await call('POST', '/nemlig/plan');
+  const line = (name) => plan.lines.find((l) => l.name === name);
+
+  // The model chose m3; the arithmetic overruled its count: 1,5 kg in 1 kg bags is 2.
+  assert.equal(line('Hvedemel').product.id, 'm3');
+  assert.equal(line('Hvedemel').source, 'ai');
+  assert.equal(line('Hvedemel').quantity, 2);
+  assert.equal(line('Hvedemel').product.description, '1 kg / Valsemøllen');
+  assert.ok(line('Hvedemel').alternatives.some((a) => a.id === 'm1'));
+  // Milk is a favourite, and 2 l in 1 l cartons is 2.
+  assert.equal(line('Mælk').product.id, 'k1');
+  assert.equal(line('Mælk').product.favourite, true);
+  assert.equal(line('Mælk').quantity, 2);
+  // Nothing found is reported, not guessed.
+  assert.equal(line('Safran').product, null);
+
+  // Every call went through the gateway with the app's key, scoped to nemlig.
+  assert.ok(nemligState.headers.length > 0);
+  assert.ok(nemligState.headers.every((h) => h.key === 'Bearer test-key' && h.servers === 'nemlig'));
+
+  const entries = ['Hvedemel', 'Mælk'].map((n) => ({
+    lineId: line(n).lineId,
+    itemId: line(n).itemId,
+    productId: line(n).product.id,
+    productName: line(n).product.name,
+    description: line(n).product.description ?? '',
+    quantity: line(n).quantity,
+  }));
+  const { body: applied } = await call('POST', '/nemlig/apply', { entries });
+  assert.ok(applied.results.every((r) => r.ok));
+  // Flour went in; the basket's three milk were never lowered to two.
+  assert.deepEqual(nemligState.sets, [{ productId: 'm3', quantity: 2 }]);
+  assert.deepEqual(applied.results.find((r) => r.productId === 'k1'), {
+    productId: 'k1', name: 'Letmælk', quantity: 3, previous: 3, ok: true,
+  });
+  assert.equal(applied.basketTotal, 50);
+
+  // The lines are ticked off, and the items remember what they were bought as.
+  const { body: shop } = await call('GET', '/shop');
+  assert.equal(shop.lines.find((l) => l.name === 'Hvedemel').checked, true);
+  const flour = (await call('GET', '/items')).body.find((i) => i.name === 'Hvedemel');
+  assert.deepEqual(flour.nemlig, { productId: 'm3', name: 'Hvedemel', description: '1 kg / Valsemøllen' });
+
+  // Next time, a remembered item needs no model: more flour comes back as m3 at once.
+  const callsBefore = aiCalls.length;
+  await call('POST', '/shop/items', { entries: [{ name: 'Hvedemel', quantity: 500, unit: 'g', note: '' }] });
+  const { body: again } = await call('POST', '/nemlig/plan');
+  const flourAgain = again.lines.find((l) => l.name === 'Hvedemel');
+  assert.equal(flourAgain.source, 'remembered');
+  assert.equal(flourAgain.product.id, 'm3');
+  assert.equal(flourAgain.quantity, 2); // 1,5 kg + 0,5 kg = 2 kg
+  assert.equal(aiCalls.filter((c) => c.messages[0].content.includes('grocery shop at Nemlig')).length,
+    aiCalls.slice(0, callsBefore).filter((c) => c.messages[0].content.includes('grocery shop at Nemlig')).length);
+
+  // And it can be forgotten.
+  assert.equal((await call('DELETE', `/items/${flour.id}/nemlig`)).status, 204);
+  assert.equal((await call('GET', '/items')).body.find((i) => i.name === 'Hvedemel').nemlig, null);
 });
