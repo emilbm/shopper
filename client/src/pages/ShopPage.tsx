@@ -22,6 +22,7 @@ import {
   Spinner,
   useConfirm,
 } from '../components/ui';
+import { dayLabel } from '../days';
 import { isTyping } from '../keys';
 import { useAiEnabled, useNemligEnabled, useDinnerMutation, useDinners, useLists, useRecipes, useShop, useShopMutation } from '../queries';
 import { useWide } from '../useWide';
@@ -52,7 +53,10 @@ export default function ShopPage() {
   const [editing, setEditing] = useState<ShoppingLine | null>(null);
 
   const addItems = useShopMutation(api.shop.addItems);
-  const toggle = useShopMutation((line: ShoppingLine) => api.shop.updateLine(line.id, { checked: !line.checked }));
+  // A line that is done either way — in stock or in the basket — goes back to get.
+  const toggle = useShopMutation((line: ShoppingLine) =>
+    api.shop.updateLine(line.id, { checked: !(line.checked || line.inBasket) }),
+  );
   const removeRecipe = useShopMutation(api.shop.removeRecipe);
   const removeList = useShopMutation(api.shop.removeList);
   const removeDinner = useShopMutation(api.shop.removeDinner);
@@ -83,8 +87,10 @@ export default function ShopPage() {
   };
 
   const lines = shop.data?.lines ?? [];
-  const open = lines.filter((l) => !l.checked);
-  const done = lines.filter((l) => l.checked);
+  const open = lines.filter((l) => !l.checked && !l.inBasket);
+  const inBasket = lines.filter((l) => l.inBasket);
+  const inStock = lines.filter((l) => l.checked);
+  const done = [...inBasket, ...inStock];
 
   const groups = useMemo(() => {
     const map = new Map<string, ShoppingLine[]>();
@@ -117,7 +123,13 @@ export default function ShopPage() {
           Shopping{' '}
           {lines.length > 0 && (
             <span className="sub">
-              {open.length} to get{done.length ? ` · ${done.length} in the basket` : ''}
+              {[
+                `${open.length} to get`,
+                inBasket.length && `${inBasket.length} in the Nemlig basket`,
+                inStock.length && `${inStock.length} in stock`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           )}
         </h1>
@@ -128,7 +140,7 @@ export default function ShopPage() {
         )}
         {wide && done.length > 0 && (
           <button className="btn btn--ghost btn--sm" onClick={() => clear.mutate(true)}>
-            Clear {done.length} ticked
+            Clear {done.length} done
           </button>
         )}
         {wide && lines.length > 0 && (
@@ -248,18 +260,36 @@ export default function ShopPage() {
             ))}
           </div>
 
-          {done.length > 0 && (
+          {inBasket.length > 0 && (
             <section>
               <div className="row row--between">
-                <h2 className="section-title">In the basket</h2>
+                <h2 className="section-title">In the Nemlig basket</h2>
                 {!wide && (
                   <button className="btn btn--quiet btn--sm" onClick={() => clear.mutate(true)}>
-                    Clear {done.length}
+                    Clear {done.length} done
                   </button>
                 )}
               </div>
               <div className="card card--flush basket">
-                {done.map((line) => (
+                {inBasket.map((line) => (
+                  <LineRow key={line.id} line={line} onToggle={() => toggle.mutate(line)} onEdit={() => setEditing(line)} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {inStock.length > 0 && (
+            <section>
+              <div className="row row--between">
+                <h2 className="section-title">Already in stock</h2>
+                {!wide && inBasket.length === 0 && (
+                  <button className="btn btn--quiet btn--sm" onClick={() => clear.mutate(true)}>
+                    Clear {done.length} done
+                  </button>
+                )}
+              </div>
+              <div className="card card--flush basket">
+                {inStock.map((line) => (
                   <LineRow key={line.id} line={line} onToggle={() => toggle.mutate(line)} onEdit={() => setEditing(line)} />
                 ))}
               </div>
@@ -302,10 +332,18 @@ export default function ShopPage() {
 function LineRow({ line, onToggle, onEdit }: { line: ShoppingLine; onToggle: () => void; onEdit: () => void }) {
   const amount = formatAmounts(line.amounts);
   const reasons = [...new Set(line.sources.filter((s) => s.kind !== 'manual').map((s) => s.label))];
+  const done = line.checked || line.inBasket;
   return (
-    <div className={`line${line.checked ? ' line--done' : ''}`}>
-      <button className="line__tick" onClick={onToggle} aria-label={line.checked ? `Put ${line.name} back` : `Got ${line.name}`}>
-        <span className="tick">{line.checked && <IconCheck size={16} />}</span>
+    <div className={`line${done ? ' line--done' : ''}`}>
+      <button
+        className="line__tick"
+        onClick={onToggle}
+        aria-label={done ? `Put ${line.name} back on the list` : `${line.name} is already in stock`}
+        title={done ? 'Put it back on the list' : 'Already in stock — tick it off'}
+      >
+        <span className="tick">
+          {line.inBasket ? <IconCart size={14} /> : line.checked && <IconCheck size={16} />}
+        </span>
       </button>
       <button className="line__body" onClick={onEdit}>
         <span className="line__name">
@@ -527,8 +565,8 @@ function ShopPanel({
       <section className="panel">
         <div className="row row--between">
           <h2 className="panel__title">This week’s dinners</h2>
-          <Link className="tiny" to="/cook">
-            Cook view
+          <Link className="tiny" to="/plan">
+            Week plan
           </Link>
         </div>
         {planned.length === 0 && (
@@ -549,7 +587,11 @@ function ShopPanel({
                   d.title
                 )}
               </span>
-              {!d.recipeId && <span className="tiny faint">No recipe</span>}
+              {(d.day || !d.recipeId) && (
+                <span className="tiny faint" style={{ display: 'block' }}>
+                  {[d.day && dayLabel(d.day), !d.recipeId && 'No recipe'].filter(Boolean).join(' · ')}
+                </span>
+              )}
               {d.recipeId !== null && !d.onShop && (
                 <button className="linkish tiny" disabled={putOn.isPending} onClick={() => putOn.mutate(d.id)}>
                   Not on the list — put it on

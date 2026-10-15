@@ -71,6 +71,84 @@ export async function fetchPage(url: string, timeoutMs = 15_000): Promise<string
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
+/* --------------------------------------------------------------- images */
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+
+/** A picture from the web, kept as it is. Recipe sites already serve them at a sensible size. */
+export async function fetchImage(url: string, timeoutMs = 20_000): Promise<{ mime: string; data: Buffer }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ImportError('That is not a picture address');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new ImportError('Only http and https pictures can be fetched');
+  }
+  let res: Response;
+  try {
+    res = await fetch(parsed, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    throw new ImportError(`Could not fetch the picture: ${(err as Error).message}`, 502);
+  }
+  if (!res.ok) throw new ImportError(`The picture answered ${res.status}`, 502);
+  const mime = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  if (!IMAGE_TYPES.includes(mime)) throw new ImportError(`That is not a picture (${mime || 'no type'})`);
+  const data = Buffer.from(await res.arrayBuffer());
+  if (data.byteLength > MAX_IMAGE_BYTES) throw new ImportError('The picture is too big to keep');
+  return { mime, data };
+}
+
+/** schema.org's image: a string, a list, or an ImageObject. */
+function imageFrom(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() || null;
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const found = imageFrom(v);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const v = value as Record<string, unknown>;
+    return imageFrom(v.url ?? v.contentUrl ?? v['@id']);
+  }
+  return null;
+}
+
+/**
+ * The page's picture of the dish: the recipe data's own, else the picture the
+ * page offers for link previews (og:image), which on a recipe page is the dish.
+ */
+export function findImage(html: string, pageUrl: string): string | null {
+  const candidates: Array<string | null> = [findStructuredRecipe(html)?.image ?? null];
+  for (const m of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/\b(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image)["']/i.test(tag)) continue;
+    candidates.push(/\bcontent=["']([^"']+)["']/i.exec(tag)?.[1] ?? null);
+  }
+  for (const c of candidates) {
+    if (!c) continue;
+    try {
+      const url = new URL(decodeEntities(c), pageUrl);
+      if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+    } catch {
+      /* try the next */
+    }
+  }
+  return null;
+}
+
 /* ------------------------------------------------------ structured data */
 
 export interface StructuredRecipe {
@@ -79,6 +157,7 @@ export interface StructuredRecipe {
   ingredients: string[];
   instructions: string[];
   tags: string[];
+  image?: string | null;
 }
 
 const ENTITIES: Record<string, string> = {
@@ -195,8 +274,10 @@ function findMicrodataRecipe(html: string): StructuredRecipe | null {
     ...itemprops(body, 'recipeCategory').map((t) => t.text),
     ...itemprops(body, 'keywords').flatMap((t) => t.text.split(',')),
   ];
+  const picture = /<[a-z]+\b[^>]*\bitemprop=["']image["'][^>]*>/i.exec(body)?.[0];
   return {
     name,
+    image: picture ? (/\b(?:content|src|href)=["']([^"']+)["']/i.exec(picture)?.[1] ?? null) : null,
     servings: yieldToServings(itemprops(body, 'recipeYield')[0]?.text),
     ingredients,
     instructions,
@@ -230,6 +311,7 @@ function findJsonLdRecipe(html: string): StructuredRecipe | null {
     const category = Array.isArray(node.recipeCategory) ? node.recipeCategory : [node.recipeCategory];
     return {
       name: clean(node.name) || 'Imported recipe',
+      image: imageFrom(node.image),
       servings: yieldToServings(node.recipeYield),
       ingredients,
       instructions: instructionLines(node.recipeInstructions),
@@ -340,16 +422,20 @@ export async function importRecipe(
   if (input.url) {
     const url = input.url.trim();
     const html = await fetcher(url);
+    const withImage = (draft: RecipeDraft): RecipeDraft => {
+      const imageUrl = findImage(html, url);
+      return imageUrl ? { ...draft, imageUrl } : draft;
+    };
     const structured = findStructuredRecipe(html);
     if (structured) {
-      if (!ai.enabled) return heuristicFromStructured(structured, url);
+      if (!ai.enabled) return withImage(heuristicFromStructured(structured, url));
       try {
-        return await fromAi(structuredAsText(structured), url);
+        return withImage(await fromAi(structuredAsText(structured), url));
       } catch (err) {
         // The page's own data is good enough to fall back on.
         if (!(err instanceof AiError)) throw err;
         deps.onAiFailure?.(err);
-        return heuristicFromStructured(structured, url);
+        return withImage(heuristicFromStructured(structured, url));
       }
     }
     if (!ai.enabled) {
@@ -357,7 +443,7 @@ export async function importRecipe(
         'That page has no recipe data a program can read, and AI is not set up to read it instead. Paste the recipe text instead.',
       );
     }
-    return fromAi(`Web page: ${url}\n\n${htmlToText(html)}`, url);
+    return withImage(await fromAi(`Web page: ${url}\n\n${htmlToText(html)}`, url));
   }
 
   const text = (input.text ?? '').trim();

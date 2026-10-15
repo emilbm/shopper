@@ -5,12 +5,15 @@ import type { Meta } from '../../shared/types.js';
 import { parseIngredientLine, splitItems } from '../../shared/units.js';
 import { AiError, type Ai } from './ai.js';
 import type { Config } from './config.js';
-import { importRecipe } from './importer.js';
+import { fetchImage, fetchPage, findImage, IMAGE_TYPES, ImportError, importRecipe } from './importer.js';
 import { applyToBasket, planShop, type Nemlig } from './nemlig.js';
 import type { ErrorReporter } from './sentry.js';
 import type { Store } from './store.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
+
+/** A local calendar date. */
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A day is written YYYY-MM-DD');
 
 const quantity = z.number().positive().max(100_000).nullable().default(null);
 const unit = z.string().trim().max(20).default('');
@@ -32,6 +35,8 @@ const recipeBody = z.object({
   notes: z.string().max(2000).default(''),
   tags: z.array(z.string().max(30)).max(12).default([]),
   ingredients: z.array(entryBody).max(100).default([]),
+  /** A picture to fetch and keep with it, as an import found on the page. */
+  imageUrl: z.string().trim().url().max(2000).optional(),
 });
 
 const listBody = z.object({
@@ -77,6 +82,20 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   const reportAi = (err: unknown) =>
     reporter.capture(err, { level: 'warning', tags: { feature: 'ai' } });
 
+  // Pictures are uploaded as they are, not wrapped in JSON or a form.
+  app.addContentTypeParser(IMAGE_TYPES, { parseAs: 'buffer', bodyLimit: 10 * 1024 * 1024 }, (_req, body, done) =>
+    done(null, body),
+  );
+
+  /** Fetch and keep a recipe's picture. A failure costs only the picture, never the recipe. */
+  const keepImageFrom = async (recipeId: number, imageUrl: string) => {
+    try {
+      store.recipes.setImage(recipeId, { ...(await fetchImage(imageUrl)), sourceUrl: imageUrl });
+    } catch (err) {
+      app.log.warn({ err, recipeId, imageUrl }, 'could not keep the recipe picture');
+    }
+  };
+
   app.get('/api/health', async () => ({ ok: true }));
 
   app.get('/api/meta', async (): Promise<Meta> => ({
@@ -109,6 +128,8 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
 
   app.post('/api/items/categorise', async () => ({ categorised: await deps.categoriseNow() }));
 
+  app.get('/api/items/:id/uses', async (req) => store.items.uses(idParam.parse(req.params).id));
+
   /* ---------------------------------------------------------- recipes */
 
   app.get('/api/recipes', async () => store.recipes.list());
@@ -116,13 +137,64 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   app.get('/api/recipes/:id', async (req) => store.recipes.get(idParam.parse(req.params).id));
 
   app.post('/api/recipes', async (req, reply) => {
-    return reply.status(201).send(store.recipes.create(recipeBody.parse(req.body)));
+    const { imageUrl, ...input } = recipeBody.parse(req.body);
+    const recipe = store.recipes.create(input);
+    if (imageUrl) await keepImageFrom(recipe.id, imageUrl);
+    return reply.status(201).send(store.recipes.get(recipe.id));
   });
 
   app.put('/api/recipes/:id', async (req) => {
     const { id } = idParam.parse(req.params);
-    return store.recipes.update(id, recipeBody.parse(req.body));
+    const { imageUrl, ...input } = recipeBody.parse(req.body);
+    store.recipes.update(id, input);
+    if (imageUrl) await keepImageFrom(id, imageUrl);
+    return store.recipes.get(id);
   });
+
+  app.get('/api/recipes/:id/image', async (req, reply) => {
+    const image = store.recipes.image(idParam.parse(req.params).id);
+    // The address changes with the picture (?v=), so it can be kept forever.
+    return reply
+      .type(image.mime)
+      .header('cache-control', 'private, max-age=31536000, immutable')
+      .send(Buffer.from(image.data));
+  });
+
+  /** Upload a picture: the body is the image itself. */
+  app.put('/api/recipes/:id/image', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const mime = (req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
+    if (!IMAGE_TYPES.includes(mime) || !Buffer.isBuffer(req.body) || !req.body.byteLength) {
+      throw new ImportError('Send a JPEG, PNG, WebP, GIF or AVIF picture', 415);
+    }
+    return store.recipes.setImage(id, { mime, data: req.body });
+  });
+
+  /**
+   * Fetch a picture from an address — a picture's, or a recipe page's, whose
+   * picture of the dish is used. Without one, the recipe's own source page.
+   */
+  app.post('/api/recipes/:id/image/fetch', async (req) => {
+    const { id } = idParam.parse(req.params);
+    const body = z.object({ url: z.string().trim().url().max(2000).optional() }).parse(req.body ?? {});
+    const url = body.url || store.recipes.get(id).sourceUrl;
+    if (!url) throw new ImportError('This recipe has no source page to take a picture from');
+    let image: { mime: string; data: Buffer };
+    let imageUrl = url;
+    try {
+      image = await fetchImage(url);
+    } catch (err) {
+      // Not a picture itself: read it as a page and find the dish on it.
+      if (!(err instanceof ImportError) || err.statusCode !== 422) throw err;
+      const found = findImage(await fetchPage(url), url);
+      if (!found) throw new ImportError('That page has no picture of the dish');
+      imageUrl = found;
+      image = await fetchImage(found);
+    }
+    return store.recipes.setImage(id, { ...image, sourceUrl: imageUrl });
+  });
+
+  app.delete('/api/recipes/:id/image', async (req) => store.recipes.removeImage(idParam.parse(req.params).id));
 
   app.delete('/api/recipes/:id', async (req, reply) => {
     store.recipes.remove(idParam.parse(req.params).id);
@@ -173,6 +245,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
         recipeId: z.number().int().positive().nullable().optional(),
         servings: z.number().int().min(1).max(100).optional(),
         note: z.string().max(500).optional(),
+        day: day.nullable().optional(),
         addToShop: z.boolean().default(true),
       })
       .refine((v) => v.title || v.recipeId, 'Give a title or a recipe')
@@ -188,6 +261,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
         recipeId: z.number().int().positive().nullable().optional(),
         servings: z.number().int().min(1).max(100).optional(),
         note: z.string().max(500).optional(),
+        day: day.nullable().optional(),
         cooked: z.boolean().optional(),
       })
       .parse(req.body);
@@ -204,6 +278,23 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   });
 
   app.post('/api/dinners/clear-cooked', async () => ({ removed: store.dinners.clearCooked() }));
+
+  /* ------------------------------------------------------ week planner */
+
+  /** The days from `from`, which the browser gives so "today" is the household's today. */
+  app.get('/api/plan', async (req) => {
+    const { from, days } = z
+      .object({ from: day, days: z.coerce.number().int().min(1).max(31).default(7) })
+      .parse(req.query);
+    return store.plan.get(from, days);
+  });
+
+  app.put('/api/plan/:day/note', async (req, reply) => {
+    const params = z.object({ day }).parse(req.params);
+    const { note } = z.object({ note: z.string().max(1000) }).parse(req.body);
+    store.plan.setNote(params.day, note);
+    return reply.status(204).send();
+  });
 
   /* ------------------------------------------------------ shopping list */
 

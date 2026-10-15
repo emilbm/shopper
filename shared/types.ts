@@ -7,8 +7,12 @@ export interface Item {
   /** Null until someone, or the AI, has put it in an aisle. */
   category: string | null;
   notes: string;
-  /** How many recipes and lists use it — an item in use cannot be deleted. */
+  /** How many recipe and list entries use it — an item in use cannot be deleted. */
   usage: number;
+  /** How many recipes it is an ingredient of. */
+  recipes: number;
+  /** How many of the set lists it is on. */
+  lists: number;
   /** The Nemlig product it was last bought as, if any. */
   nemlig: RememberedProduct | null;
 }
@@ -39,6 +43,8 @@ export interface RecipeSummary {
   servings: number;
   tags: string[];
   ingredientCount: number;
+  /** Address of its picture, or null when it has none. */
+  image: string | null;
   updatedAt: string;
 }
 
@@ -51,6 +57,8 @@ export interface Recipe {
   notes: string;
   tags: string[];
   ingredients: RecipeIngredient[];
+  /** Address of its picture, or null when it has none. */
+  image: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +74,8 @@ export interface RecipeDraft {
   ingredients: Array<IngredientInput & { category?: string | null }>;
   /** How the draft was made, so the editor can say how much to trust it. */
   via: 'ai' | 'structured-data' | 'heuristic';
+  /** The page's picture of the dish, fetched and kept when the recipe is saved. */
+  imageUrl?: string;
 }
 
 export interface StapleListEntry {
@@ -102,7 +112,10 @@ export interface ShoppingLine {
   itemId: number;
   name: string;
   category: string | null;
+  /** Ticked off: already in stock, so not to buy. */
   checked: boolean;
+  /** Put in the Nemlig basket by Send to Nemlig. */
+  inBasket: boolean;
   note: string;
   /** The sources added up: one amount per kind of unit. */
   amounts: Amount[];
@@ -123,12 +136,14 @@ export interface ShoppingList {
 }
 
 /**
- * One of this week's dinners. Not a calendar: just what is planned, in the
- * order it was planned, until it is cooked.
+ * A planned dinner. It has a day once it is put on the week planner; without
+ * one it is simply planned for "this week", in the order it was added.
  */
 export interface Dinner {
   id: number;
   title: string;
+  /** A local date, YYYY-MM-DD, or null when it has no day yet. */
+  day: string | null;
   /** Null for a dinner without one ('Takeaway'), or whose recipe was deleted. */
   recipeId: number | null;
   recipeName: string | null;
@@ -138,6 +153,19 @@ export interface Dinner {
   createdAt: string;
   /** Whether its ingredients are on the current shopping list. */
   onShop: boolean;
+}
+
+/** One day of the week planner. */
+export interface PlanDay {
+  day: string;
+  note: string;
+  dinners: Dinner[];
+}
+
+export interface WeekPlan {
+  days: PlanDay[];
+  /** Planned, not cooked, and not on any day yet. */
+  unscheduled: Dinner[];
 }
 
 /* ------------------------------------------------------------- Nemlig */

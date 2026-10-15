@@ -11,6 +11,7 @@ import type {
   RecipeSummary,
   ShoppingList,
   StapleList,
+  WeekPlan,
 } from '../../shared/types';
 
 /**
@@ -31,11 +32,13 @@ export class ApiError extends Error {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
+  // A picture goes up as itself; everything else as JSON.
+  const raw = body instanceof Blob;
   try {
     res = await fetch(BASE + path, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined ? undefined : { 'content-type': raw ? body.type : 'application/json' },
+      body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(0, 'Cannot reach the server');
@@ -75,6 +78,8 @@ export interface RecipeInput {
   notes: string;
   tags: string[];
   ingredients: EntryInput[];
+  /** A picture for the server to fetch and keep, as found by an import. */
+  imageUrl?: string;
 }
 
 export interface ListInput {
@@ -88,6 +93,7 @@ export interface DinnerInput {
   recipeId?: number | null;
   servings?: number;
   note?: string;
+  day?: string | null;
   /** Default true: a planned recipe's ingredients go on the shopping list. */
   addToShop?: boolean;
 }
@@ -97,6 +103,7 @@ export interface DinnerPatch {
   recipeId?: number | null;
   servings?: number;
   note?: string;
+  day?: string | null;
   cooked?: boolean;
 }
 
@@ -117,6 +124,11 @@ export const api = {
     merge: (id: number, intoId: number) => request<Item>('POST', `/items/${id}/merge`, { intoId }),
     categorise: () => request<{ categorised: number }>('POST', '/items/categorise', {}),
     forgetNemlig: (id: number) => request<void>('DELETE', `/items/${id}/nemlig`),
+    uses: (id: number) =>
+      request<{ recipes: Array<{ id: number; name: string }>; lists: Array<{ id: number; name: string }> }>(
+        'GET',
+        `/items/${id}/uses`,
+      ),
   },
 
   recipes: {
@@ -127,6 +139,15 @@ export const api = {
     remove: (id: number) => request<void>('DELETE', `/recipes/${id}`),
     import: (input: { url?: string; text?: string }) =>
       request<RecipeDraft>('POST', '/recipes/import', input),
+    uploadImage: (id: number, image: Blob) => request<Recipe>('PUT', `/recipes/${id}/image`, image),
+    /** A picture's address, or a page's; without one, the recipe's own source page. */
+    fetchImage: (id: number, url?: string) => request<Recipe>('POST', `/recipes/${id}/image/fetch`, { url }),
+    removeImage: (id: number) => request<Recipe>('DELETE', `/recipes/${id}/image`),
+  },
+
+  plan: {
+    get: (from: string, days: number) => request<WeekPlan>('GET', `/plan?from=${from}&days=${days}`),
+    setNote: (day: string, note: string) => request<void>('PUT', `/plan/${day}/note`, { note }),
   },
 
   lists: {

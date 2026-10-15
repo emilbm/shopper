@@ -42,6 +42,13 @@ export default function RecipePage() {
         {r && (
           <div className="recipe-layout">
             <div className="stack recipe-layout__side">
+            {r.image ? (
+              <img className="recipe-hero" src={r.image} alt={r.name} />
+            ) : (
+              <Link className="recipe-hero recipe-hero--empty" to={`/recipes/${id}/edit`}>
+                <IconPot size={22} /> Add a picture
+              </Link>
+            )}
             {(r.tags.length > 0 || r.sourceUrl) && (
               <div className="row row--wrap">
                 {r.tags.map((t) => (

@@ -1,9 +1,10 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CATEGORIES, categoryLabel } from '../../../shared/categories';
 import type { Item } from '../../../shared/types';
 import { api } from '../api';
-import { EmptyState, ErrorBanner, IconChevron, IconSparkle, IconTrash, Sheet, Spinner } from '../components/ui';
+import { EmptyState, ErrorBanner, IconBook, IconChevron, IconList, IconSparkle, IconTrash, Sheet, Spinner } from '../components/ui';
 import { keys, useAiEnabled, useItems } from '../queries';
 
 /**
@@ -65,6 +66,11 @@ export default function ItemsPage() {
         )}
         {!!items.data?.length && (
           <div className="stack">
+            <p className="small muted" style={{ margin: 0 }}>
+              Every ingredient and product your recipes, lists and shopping use, by aisle. They fill in by themselves; this
+              page is for tidying. Next to each: how many recipes and lists it is on. <span className="tag tag--nemlig">Nemlig</span>{' '}
+              means Send to Nemlig remembers which product to buy for it.
+            </p>
             <input className="input" type="search" placeholder="Find an item" value={query} onChange={(e) => setQuery(e.target.value)} />
             {aiEnabled && uncategorised > 0 && (
               <button className="btn btn--ai btn--block" disabled={sorting} onClick={() => void sortWithAi()}>
@@ -85,7 +91,12 @@ export default function ItemsPage() {
                     {item.name}
                     {!item.category && <span className="faint small"> · unsorted</span>}
                   </span>
-                  {item.usage > 0 && <span className="small faint">{item.usage}×</span>}
+                  {item.nemlig && (
+                    <span className="tag tag--nemlig" title={`Bought at Nemlig as ${item.nemlig.name}`}>
+                      Nemlig
+                    </span>
+                  )}
+                  <span className="small faint item-uses">{usesLabel(item) || 'not in use'}</span>
                   <span className="chev">
                     <IconChevron />
                   </span>
@@ -101,8 +112,18 @@ export default function ItemsPage() {
   );
 }
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** "4 recipes · 1 list" */
+function usesLabel(item: Item): string {
+  return [item.recipes && plural(item.recipes, 'recipe', 'recipes'), item.lists && plural(item.lists, 'list', 'lists')]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function ItemSheet({ item, all, onClose }: { item: Item; all: Item[]; onClose: () => void }) {
   const qc = useQueryClient();
+  const uses = useQuery({ queryKey: [...keys.items, item.id, 'uses'], queryFn: () => api.items.uses(item.id) });
   const [name, setName] = useState(item.name);
   const [category, setCategory] = useState<string>(item.category ?? '');
   const [notes, setNotes] = useState(item.notes);
@@ -158,9 +179,35 @@ function ItemSheet({ item, all, onClose }: { item: Item; all: Item[]; onClose: (
           Save
         </button>
 
+        {(item.recipes > 0 || item.lists > 0) && (
+          <>
+            <h2 className="section-title">Used in</h2>
+            {uses.isLoading && <Spinner />}
+            {uses.data && (
+              <div className="row row--wrap">
+                {uses.data.recipes.map((r) => (
+                  <Link key={`r${r.id}`} className="chip" to={`/recipes/${r.id}`} onClick={onClose}>
+                    <IconBook size={13} /> {r.name}
+                  </Link>
+                ))}
+                {uses.data.lists.map((l) => (
+                  <Link key={`l${l.id}`} className="chip" to={`/lists/${l.id}`} onClick={onClose}>
+                    <IconList size={13} /> {l.name}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <h2 className="section-title">At Nemlig</h2>
+        {!item.nemlig && (
+          <p className="small muted" style={{ margin: 0 }}>
+            No product chosen yet. The next Send to Nemlig searches for “{item.name}”, and remembers the product you keep.
+          </p>
+        )}
         {item.nemlig && (
           <>
-            <h2 className="section-title">At Nemlig</h2>
             <div className="row">
               <span className="grow small">
                 Bought as <strong>{item.nemlig.name}</strong>
@@ -205,7 +252,7 @@ function ItemSheet({ item, all, onClose }: { item: Item; all: Item[]; onClose: (
           disabled={busy || item.usage > 0}
           onClick={() => void run(() => api.items.remove(item.id))}
         >
-          <IconTrash /> {item.usage > 0 ? `Used ${item.usage}× — merge it instead` : 'Delete item'}
+          <IconTrash /> {item.usage > 0 ? 'In use — merge it instead' : 'Delete item'}
         </button>
       </div>
     </Sheet>

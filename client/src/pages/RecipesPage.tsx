@@ -1,7 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { EmptyState, ErrorBanner, IconChevron, IconPlus, IconSparkle, Spinner } from '../components/ui';
+import { EmptyState, ErrorBanner, IconPlus, IconSparkle, Spinner } from '../components/ui';
 import { useAiEnabled, useRecipes } from '../queries';
+
+/** A steady colour per recipe, so a recipe without a picture is still recognisable. */
+function hue(name: string): number {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return h;
+}
 
 export default function RecipesPage() {
   const recipes = useRecipes();
@@ -56,23 +63,29 @@ export default function RecipesPage() {
                 ))}
               </div>
             )}
-            <div className="card card--flush recipe-grid">
+            <div className="recipe-cards">
               {shown.map((r) => (
-                <Link key={r.id} to={`/recipes/${r.id}`} className="list__row">
-                  <span className="grow">
+                <Link key={r.id} to={`/recipes/${r.id}`} className="recipe-card">
+                  {r.image ? (
+                    <span className="recipe-card__pic">
+                      <img src={r.image} alt="" loading="lazy" decoding="async" />
+                    </span>
+                  ) : (
+                    <span className="recipe-card__pic recipe-card__pic--none" style={{ ['--hue' as string]: hue(r.name) }}>
+                      {r.name.charAt(0)}
+                    </span>
+                  )}
+                  <span className="recipe-card__body">
                     <span className="list__title">{r.name}</span>
                     <span className="small muted" style={{ display: 'block' }}>
                       {r.servings} servings · {r.ingredientCount} ingredients
                       {r.tags.length ? ` · ${r.tags.join(', ')}` : ''}
                     </span>
                   </span>
-                  <span className="chev">
-                    <IconChevron />
-                  </span>
                 </Link>
               ))}
-              {shown.length === 0 && <p className="muted small" style={{ padding: 14, margin: 0 }}>Nothing matches.</p>}
             </div>
+            {shown.length === 0 && <p className="muted small" style={{ margin: 0 }}>Nothing matches.</p>}
           </div>
         )}
       </main>

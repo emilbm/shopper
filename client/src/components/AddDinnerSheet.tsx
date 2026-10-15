@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
+import { addDays, dayLabel, today } from '../days';
 import { useDinnerMutation, useRecipes } from '../queries';
 import { Stepper } from './EntryEditor';
 import { ErrorBanner, IconCheck, Sheet, Spinner } from './ui';
@@ -16,6 +17,8 @@ export function AddDinnerSheet({ onClose, defaultAddToShop = true }: { onClose: 
   const [chosen, setChosen] = useState<{ id: number; servings: number } | null>(null);
   const [title, setTitle] = useState('');
   const [addToShop, setAddToShop] = useState(defaultAddToShop);
+  const [day, setDay] = useState('');
+  const days = Array.from({ length: 9 }, (_, i) => addDays(today(), i));
   const add = useDinnerMutation(api.dinners.add);
 
   const shown = (recipes.data ?? []).filter((r) => r.name.toLowerCase().includes(filter.trim().toLowerCase()));
@@ -24,8 +27,8 @@ export function AddDinnerSheet({ onClose, defaultAddToShop = true }: { onClose: 
   const submit = () =>
     add.mutate(
       mode === 'recipe' && chosen
-        ? { recipeId: chosen.id, servings: chosen.servings, addToShop }
-        : { title: title.trim(), addToShop: false },
+        ? { recipeId: chosen.id, servings: chosen.servings, addToShop, day: day || null }
+        : { title: title.trim(), addToShop: false, day: day || null },
       { onSuccess: onClose },
     );
 
@@ -83,6 +86,18 @@ export function AddDinnerSheet({ onClose, defaultAddToShop = true }: { onClose: 
             autoFocus
           />
         )}
+
+        <div className="field">
+          <label htmlFor="dinner-day">Day</label>
+          <select id="dinner-day" className="select" value={day} onChange={(e) => setDay(e.target.value)}>
+            <option value="">No particular day</option>
+            {days.map((d) => (
+              <option key={d} value={d}>
+                {dayLabel(d)}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <ErrorBanner error={add.error} />
         <button className="btn btn--primary btn--block btn--lg" disabled={!ready || add.isPending} onClick={submit}>

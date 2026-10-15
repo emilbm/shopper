@@ -234,7 +234,7 @@ function ResultView({ result, onDone }: { result: NemligApplyResult; onDone: () 
       <div className={`banner ${failed.length ? 'banner--warn' : 'banner--info'}`}>
         {failed.length
           ? `${result.results.length - failed.length} of ${result.results.length} products went in. The rest are still on the list.`
-          : 'Everything went in, and those lines are ticked off the list.'}{' '}
+          : 'Everything went in, and those lines now show as in the Nemlig basket on the list.'}{' '}
         Nothing is ordered yet: choose a delivery time and check out at Nemlig.
       </div>
       <div className="card card--flush">

@@ -143,6 +143,32 @@ const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN nemlig_product_name TEXT;
   ALTER TABLE items ADD COLUMN nemlig_description TEXT;
   `,
+
+  // 4 — recipe pictures, dinners on a day of the week planner with a note per
+  // day, and "in the Nemlig basket" as its own state of a shopping line, apart
+  // from ticked off as already in stock
+  `
+  -- In the database rather than on disk beside it, so the volume stays one
+  -- file to back up. A picture is a few hundred kilobytes.
+  CREATE TABLE recipe_images (
+    recipe_id  INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
+    mime       TEXT NOT NULL,
+    data       BLOB NOT NULL,
+    source_url TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
+  -- A local date, YYYY-MM-DD. Null for a dinner planned without a day.
+  ALTER TABLE dinners ADD COLUMN day TEXT;
+  CREATE INDEX idx_dinners_day ON dinners(day);
+
+  CREATE TABLE day_notes (
+    day  TEXT PRIMARY KEY,
+    note TEXT NOT NULL
+  );
+
+  ALTER TABLE shop_lines ADD COLUMN in_basket INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDatabase(path: string): Db {

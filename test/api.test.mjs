@@ -24,9 +24,17 @@ const envelopes = [];
 const aiCalls = [];
 
 const RECIPE_PAGE = `<html><head><script type="application/ld+json">
-{"@type":"Recipe","name":"Chili","recipeYield":"4","recipeIngredient":["400 g hakket oksekød","1 dåse kidneybønner"],
+{"@type":"Recipe","name":"Chili","recipeYield":"4","image":{"@type":"ImageObject","url":"/dish.png"},"recipeIngredient":["400 g hakket oksekød","1 dåse kidneybønner"],
  "recipeInstructions":"Brun kødet. Kog i 30 min."}
 </script></head><body></body></html>`;
+
+/** A page with no recipe data, only a link-preview picture. */
+const PREVIEW_PAGE = '<html><head><meta property="og:image" content="/dish.png"></head><body>Hi</body></html>';
+/** A 1×1 PNG. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 function aiReply(system, user) {
   if (system.includes('grocery shop at Nemlig')) {
@@ -156,6 +164,14 @@ function startFake() {
       const content = typeof reply === 'string' ? reply : '```json\n' + JSON.stringify(reply) + '\n```';
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
+      return;
+    }
+    if (req.url === '/dish.png') {
+      res.writeHead(200, { 'content-type': 'image/png' }).end(PNG);
+      return;
+    }
+    if (req.url === '/preview.html') {
+      res.writeHead(200, { 'content-type': 'text/html' }).end(PREVIEW_PAGE);
       return;
     }
     if (req.url === '/recipe.html') {
@@ -375,6 +391,8 @@ test('importing a recipe page goes through its structured data and the AI', asyn
   assert.equal(draft.instructions, '1. Brun kødet.\n2. Kog i 30 min.');
   assert.deepEqual(draft.ingredients[0], { name: 'Hakket oksekød', quantity: 400, unit: 'g', note: '', category: 'meat' });
   assert.equal(draft.ingredients[2].quantity, 2);
+  // The page's picture of the dish, made absolute.
+  assert.equal(draft.imageUrl, `${fakeUrl}/dish.png`);
   // The model was handed the page's own recipe data, not its HTML.
   assert.match(aiCalls.at(-1).messages[1].content, /- 400 g hakket oksekød/);
 
@@ -575,9 +593,11 @@ test('nemlig: a plan proposes products and packs, apply fills the basket, and ch
   });
   assert.equal(applied.basketTotal, 50);
 
-  // The lines are ticked off, and the items remember what they were bought as.
+  // The lines are in the basket — not ticked off as in stock — and the items
+  // remember what they were bought as.
   const { body: shop } = await call('GET', '/shop');
-  assert.equal(shop.lines.find((l) => l.name === 'Hvedemel').checked, true);
+  assert.equal(shop.lines.find((l) => l.name === 'Hvedemel').inBasket, true);
+  assert.equal(shop.lines.find((l) => l.name === 'Hvedemel').checked, false);
   const flour = (await call('GET', '/items')).body.find((i) => i.name === 'Hvedemel');
   assert.deepEqual(flour.nemlig, { productId: 'm3', name: 'Hvedemel', description: '1 kg / Valsemøllen' });
 
@@ -595,4 +615,149 @@ test('nemlig: a plan proposes products and packs, apply fills the basket, and ch
   // And it can be forgotten.
   assert.equal((await call('DELETE', `/items/${flour.id}/nemlig`)).status, 204);
   assert.equal((await call('GET', '/items')).body.find((i) => i.name === 'Hvedemel').nemlig, null);
+});
+
+test('shopping lines: in stock and in the basket are separate, and both clear as done', async () => {
+  await call('POST', '/shop/clear', { onlyChecked: false });
+  let { body: shop } = await call('POST', '/shop/items', {
+    entries: ['Smør', 'Mælk', 'Rugbrød'].map((name) => ({ name, quantity: null, unit: '', note: '' })),
+  });
+  const line = (n) => shop.lines.find((l) => l.name === n);
+  ({ body: shop } = await call('PATCH', `/shop/lines/${line('Smør').id}`, { checked: true }));
+  assert.equal(line('Smør').checked, true);
+  assert.equal(line('Smør').inBasket, false);
+
+  const milk = line('Mælk');
+  await call('POST', '/nemlig/apply', {
+    entries: [{ lineId: milk.id, itemId: milk.itemId, productId: 'k1', productName: 'Letmælk', quantity: 1 }],
+  });
+  ({ body: shop } = await call('GET', '/shop'));
+  assert.equal(line('Mælk').inBasket, true);
+  assert.equal(line('Mælk').checked, false);
+
+  // Nothing in stock or in the basket is proposed for Nemlig.
+  const { body: plan } = await call('POST', '/nemlig/plan');
+  assert.deepEqual(plan.lines.map((l) => l.name), ['Rugbrød']);
+
+  // Putting it back makes it something to get again.
+  ({ body: shop } = await call('PATCH', `/shop/lines/${line('Mælk').id}`, { checked: false }));
+  assert.equal(line('Mælk').inBasket, false);
+
+  // So does asking for it again.
+  await call('POST', '/nemlig/apply', {
+    entries: [{ lineId: milk.id, itemId: milk.itemId, productId: 'k1', productName: 'Letmælk', quantity: 1 }],
+  });
+  ({ body: shop } = await call('POST', '/shop/items', { entries: [{ name: 'Mælk', quantity: 1, unit: 'l', note: '' }] }));
+  assert.equal(line('Mælk').inBasket, false);
+
+  // Clearing what is done takes in-stock and in-basket lines alike.
+  await call('POST', '/nemlig/apply', {
+    entries: [{ lineId: milk.id, itemId: milk.itemId, productId: 'k1', productName: 'Letmælk', quantity: 1 }],
+  });
+  ({ body: shop } = await call('POST', '/shop/clear', { onlyChecked: true }));
+  assert.deepEqual(shop.lines.map((l) => l.name), ['Rugbrød']);
+});
+
+test('items say how many recipes and lists use them, and which', async () => {
+  const { body: recipe } = await call('POST', '/recipes', {
+    name: 'Kartoffelsuppe',
+    ingredients: [
+      { name: 'Porrer', quantity: 2, unit: 'stk', note: '' },
+      { name: 'Porrer', quantity: 1, unit: 'stk', note: 'til pynt' },
+    ],
+  });
+  await call('POST', '/lists', { name: 'Grønt', entries: [{ name: 'Porrer', quantity: 1, unit: 'stk' }] });
+  const leek = (await call('GET', '/items')).body.find((i) => i.name === 'Porrer');
+  // Twice in one recipe is still one recipe.
+  assert.equal(leek.recipes, 1);
+  assert.equal(leek.lists, 1);
+  assert.equal(leek.usage, 3);
+  const { body: uses } = await call('GET', `/items/${leek.id}/uses`);
+  assert.deepEqual(uses.recipes, [{ id: recipe.id, name: 'Kartoffelsuppe' }]);
+  assert.deepEqual(uses.lists.map((l) => l.name), ['Grønt']);
+});
+
+test('recipe pictures: kept from an import, uploaded, fetched from a page, removed', async () => {
+  const origin = base.replace(/\/api$/, '');
+  const { status, body: recipe } = await call('POST', '/recipes', {
+    name: 'Chili med billede',
+    sourceUrl: `${fakeUrl}/preview.html`,
+    imageUrl: `${fakeUrl}/dish.png`,
+    ingredients: [{ name: 'Chili', quantity: 1, unit: '', note: '' }],
+  });
+  assert.equal(status, 201);
+  assert.ok(recipe.image.startsWith(`/api/recipes/${recipe.id}/image?v=`));
+  let res = await fetch(origin + recipe.image);
+  assert.equal(res.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), PNG);
+  assert.ok((await call('GET', '/recipes')).body.find((r) => r.id === recipe.id).image);
+
+  // An upload is the picture itself as the body.
+  res = await fetch(`${base}/recipes/${recipe.id}/image`, {
+    method: 'PUT',
+    headers: { 'content-type': 'image/jpeg' },
+    body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+  });
+  assert.equal(res.status, 200);
+  const uploaded = await res.json();
+  assert.notEqual(uploaded.image, recipe.image);
+  res = await fetch(origin + uploaded.image);
+  assert.equal(res.headers.get('content-type'), 'image/jpeg');
+
+  res = await fetch(`${base}/recipes/${recipe.id}/image`, { method: 'PUT', headers: { 'content-type': 'text/plain' }, body: 'hi' });
+  assert.equal(res.status, 415);
+
+  const removed = await call('DELETE', `/recipes/${recipe.id}/image`);
+  assert.equal(removed.body.image, null);
+  assert.equal((await call('GET', `/recipes/${recipe.id}/image`)).status, 404);
+
+  // From the recipe's own source page, which only has a link-preview picture.
+  const fetched = await call('POST', `/recipes/${recipe.id}/image/fetch`, {});
+  assert.equal(fetched.status, 200);
+  assert.ok(fetched.body.image);
+
+  // A picture that cannot be fetched costs only the picture.
+  const noPic = await call('POST', '/recipes', { name: 'Uden billede', imageUrl: `${fakeUrl}/missing.png` });
+  assert.equal(noPic.status, 201);
+  assert.equal(noPic.body.image, null);
+});
+
+test('week plan: dinners on days, notes, and moving between days', async () => {
+  const from = '2031-03-03';
+  const titles = (plan) => plan.days.map((d) => d.dinners.map((x) => x.title));
+  const { body: recipe } = await call('POST', '/recipes', {
+    name: 'Pastaret',
+    servings: 2,
+    ingredients: [{ name: 'Pasta', quantity: 250, unit: 'g', note: '' }],
+  });
+  const { body: monday } = await call('POST', '/dinners', { recipeId: recipe.id, day: '2031-03-03' });
+  assert.equal(monday.day, '2031-03-03');
+  assert.equal(monday.onShop, true);
+  await call('POST', '/dinners', { title: 'Takeaway', day: '2031-03-05', addToShop: false });
+  const { body: loose } = await call('POST', '/dinners', { title: 'Rester', addToShop: false });
+  assert.equal((await call('PUT', '/plan/2031-03-04/note', { note: 'Fodbold — spis tidligt' })).status, 204);
+
+  let { body: plan } = await call('GET', `/plan?from=${from}&days=3`);
+  assert.deepEqual(plan.days.map((d) => d.day), ['2031-03-03', '2031-03-04', '2031-03-05']);
+  assert.deepEqual(titles(plan), [['Pastaret'], [], ['Takeaway']]);
+  assert.equal(plan.days[1].note, 'Fodbold — spis tidligt');
+  assert.ok(plan.unscheduled.some((d) => d.id === loose.id));
+
+  // Move to another day; give one a day; an empty note is no note.
+  await call('PATCH', `/dinners/${monday.id}`, { day: '2031-03-04' });
+  await call('PATCH', `/dinners/${loose.id}`, { day: '2031-03-03' });
+  await call('PUT', '/plan/2031-03-04/note', { note: '  ' });
+  ({ body: plan } = await call('GET', `/plan?from=${from}&days=3`));
+  assert.deepEqual(titles(plan), [['Rester'], ['Pastaret'], ['Takeaway']]);
+  assert.equal(plan.days[1].note, '');
+  assert.equal(plan.unscheduled.some((d) => d.id === loose.id), false);
+  // Moving a dinner leaves the shopping list alone.
+  assert.equal(plan.days[1].dinners[0].onShop, true);
+
+  await call('PATCH', `/dinners/${loose.id}`, { day: null });
+  ({ body: plan } = await call('GET', `/plan?from=${from}&days=3`));
+  assert.ok(plan.unscheduled.some((d) => d.id === loose.id));
+
+  assert.equal((await call('GET', '/plan?from=3/3/2031&days=3')).status, 400);
+  assert.equal((await call('PATCH', `/dinners/${loose.id}`, { day: 'tomorrow' })).status, 400);
 });

@@ -4,6 +4,7 @@ import type { Dinner } from '../../../shared/types';
 import { api } from '../api';
 import { AddDinnerSheet } from '../components/AddDinnerSheet';
 import { EmptyState, ErrorBanner, IconCart, IconCheck, IconChevron, IconPlus, Spinner, useConfirm } from '../components/ui';
+import { dayLabel } from '../days';
 import { useDinnerMutation, useDinners } from '../queries';
 
 /** "Tirsdag" for something cooked this week, a date for anything older. */
@@ -100,6 +101,7 @@ function DinnerCard({ dinner }: { dinner: Dinner }) {
   return (
     <Link to={`/cook/${dinner.id}`} className="dinner-card">
       <span className="grow" style={{ minWidth: 0 }}>
+        {dinner.day && <span className="dinner-card__day">{dayLabel(dinner.day)}</span>}
         <span className="dinner-card__title">{dinner.title}</span>
         <span className="dinner-card__meta">
           {dinner.recipeId ? `${dinner.servings} pers.` : 'No recipe'}

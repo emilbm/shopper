@@ -105,6 +105,13 @@ export const IconBook = ({ size = 22 }: IconProps) => (
   </svg>
 );
 
+export const IconCalendar = ({ size = 22 }: IconProps) => (
+  <svg {...svgProps(size)}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </svg>
+);
+
 export const IconTag = ({ size = 22 }: IconProps) => (
   <svg {...svgProps(size)}>
     <path d="M3 12V4h8l10 10-8 8z" />

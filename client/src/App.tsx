@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { IconBook, IconCart, IconList, IconPot, IconTag } from './components/ui';
+import { IconBook, IconCalendar, IconCart, IconList, IconPot, IconTag } from './components/ui';
 import { isTyping } from './keys';
 import { lastMode, rememberMode } from './mode';
 import CookDinnerPage from './pages/CookDinnerPage';
@@ -9,6 +9,7 @@ import ItemsPage from './pages/ItemsPage';
 import ListEditPage from './pages/ListEditPage';
 import ListsPage from './pages/ListsPage';
 import NemligPage from './pages/NemligPage';
+import PlanPage from './pages/PlanPage';
 import RecipeEditPage from './pages/RecipeEditPage';
 import RecipeImportPage from './pages/RecipeImportPage';
 import RecipePage from './pages/RecipePage';
@@ -19,6 +20,7 @@ import { useWide } from './useWide';
 
 const TABS = [
   { to: '/shop', label: 'Shop', icon: IconCart, key: 's' },
+  { to: '/plan', label: 'Plan', icon: IconCalendar, key: 'p' },
   { to: '/recipes', label: 'Recipes', icon: IconBook, key: 'r' },
   { to: '/lists', label: 'Lists', icon: IconList, key: 'l' },
   { to: '/items', label: 'Items', icon: IconTag, key: 'i' },
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/shop/nemlig" element={<NemligPage />} />
+          <Route path="/plan" element={<PlanPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<RecipeEditPage />} />
           <Route path="/recipes/import" element={<RecipeImportPage />} />
@@ -79,7 +82,7 @@ function ShopNav() {
   const shop = useShop();
   const toGet = shop.data?.lines.filter((l) => !l.checked).length ?? 0;
 
-  // g then a letter, as in Gmail: g s shop, g r recipes, g l lists, g i items, g c cook.
+  // g then a letter, as in Gmail: g s shop, g p plan, g r recipes, g l lists, g i items, g c cook.
   useEffect(() => {
     let pending = false;
     let timer: ReturnType<typeof setTimeout>;

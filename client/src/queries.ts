@@ -10,6 +10,7 @@ export const keys = {
   recipe: (id: number) => ['recipes', id] as const,
   lists: ['lists'] as const,
   dinners: ['dinners'] as const,
+  plan: ['plan'] as const,
 };
 
 export const useMeta = () => useQuery({ queryKey: keys.meta, queryFn: api.meta, staleTime: Infinity });
@@ -29,6 +30,13 @@ export const useRecipe = (id: number | null) =>
   });
 export const useLists = () => useQuery({ queryKey: keys.lists, queryFn: api.lists.list });
 export const useDinners = () => useQuery({ queryKey: keys.dinners, queryFn: api.dinners.list });
+export const usePlan = (from: string, days: number) =>
+  useQuery({
+    queryKey: [...keys.plan, from, days],
+    queryFn: () => api.plan.get(from, days),
+    // Adding a day keeps the days already shown on screen while the longer plan loads.
+    placeholderData: (previous) => previous,
+  });
 
 /**
  * Dinner changes ripple into the shopping list (planning one adds its
@@ -41,6 +49,7 @@ export function useDinnerMutation<A, R>(fn: (arg: A) => Promise<R>) {
     onSuccess: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: keys.dinners }),
+        qc.invalidateQueries({ queryKey: keys.plan }),
         qc.invalidateQueries({ queryKey: keys.shop }),
         qc.invalidateQueries({ queryKey: keys.items }),
       ]),
@@ -61,6 +70,7 @@ export function useShopMutation<A>(fn: (arg: A) => Promise<ShoppingList>) {
       // Adding by name can create items; taking a dinner off changes its "on the list".
       void qc.invalidateQueries({ queryKey: keys.items });
       void qc.invalidateQueries({ queryKey: keys.dinners });
+      void qc.invalidateQueries({ queryKey: keys.plan });
     },
   });
 }

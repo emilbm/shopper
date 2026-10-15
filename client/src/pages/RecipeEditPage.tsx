@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Recipe, RecipeDraft } from '../../../shared/types';
 import { api, type RecipeInput } from '../api';
 import { blankEntry, EntryEditor, entriesForSave, newKey, Stepper, type EditableEntry } from '../components/EntryEditor';
+import { PictureEditor, useBlobUrl } from '../components/PictureEditor';
 import { ErrorBanner, IconBack, IconTrash, Spinner, useConfirm } from '../components/ui';
 import { useSaveShortcut } from '../keys';
 import { keys, useRecipe } from '../queries';
@@ -60,6 +61,29 @@ export default function RecipeEditPage() {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
 
+  // A new recipe's picture waits for the save: an import's, fetched by the
+  // server, or one chosen here, uploaded once the recipe exists.
+  const [draftImage, setDraftImage] = useState<string | null>(draft?.imageUrl ?? null);
+  const [pending, setPending] = useState<Blob | null>(null);
+  const pendingUrl = useBlobUrl(pending);
+  const [pictureBusy, setPictureBusy] = useState(false);
+  const [pictureError, setPictureError] = useState<unknown>(null);
+
+  /** An existing recipe's picture changes at once, apart from the form. */
+  const changePicture = async (fn: () => Promise<Recipe>) => {
+    setPictureBusy(true);
+    setPictureError(null);
+    try {
+      const saved = await fn();
+      qc.setQueryData(keys.recipe(saved.id), saved);
+      await qc.invalidateQueries({ queryKey: keys.recipes });
+    } catch (err) {
+      setPictureError(err);
+    } finally {
+      setPictureBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (id && existing.data && !form) setForm(fromRecipe(existing.data));
   }, [id, existing.data, form]);
@@ -80,9 +104,11 @@ export default function RecipeEditPage() {
       instructions: form.instructions,
       notes: form.notes,
       ingredients: entriesForSave(form.entries).map((e) => ({ ...e, category: hints.get(e.name.toLowerCase()) ?? null })),
+      imageUrl: !id && !pending && draftImage ? draftImage : undefined,
     };
     try {
-      const saved = id ? await api.recipes.update(id, input) : await api.recipes.create(input);
+      let saved = id ? await api.recipes.update(id, input) : await api.recipes.create(input);
+      if (!id && pending) saved = await api.recipes.uploadImage(saved.id, pending);
       qc.setQueryData(keys.recipe(saved.id), saved);
       await Promise.all([
         qc.invalidateQueries({ queryKey: keys.recipes }),
@@ -144,6 +170,28 @@ export default function RecipeEditPage() {
               <span className="muted">Servings</span>
               <Stepper label="Servings" value={form.servings} onChange={(v) => set('servings', v)} />
             </div>
+
+            <h2 className="section-title">Picture</h2>
+            {id ? (
+              <PictureEditor
+                src={existing.data?.image ?? null}
+                busy={pictureBusy}
+                error={pictureError}
+                onUpload={(picture) => void changePicture(() => api.recipes.uploadImage(id, picture))}
+                onRemove={() => void changePicture(() => api.recipes.removeImage(id))}
+                onFromSource={existing.data?.sourceUrl ? () => void changePicture(() => api.recipes.fetchImage(id)) : undefined}
+              />
+            ) : (
+              <PictureEditor
+                src={pendingUrl ?? draftImage}
+                caption={!pending && draftImage ? 'From the recipe’s page. It is kept when you save.' : undefined}
+                onUpload={setPending}
+                onRemove={() => {
+                  setPending(null);
+                  setDraftImage(null);
+                }}
+              />
+            )}
 
             <h2 className="section-title">Ingredients</h2>
             <EntryEditor entries={form.entries} onChange={(entries) => set('entries', entries)} withNotes />

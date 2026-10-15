@@ -209,7 +209,7 @@ export interface PlanDeps {
  * hit when the model cannot help. Nothing touches the basket here.
  */
 export async function planShop(deps: PlanDeps): Promise<NemligPlan> {
-  const lines = deps.store.shop.get().lines.filter((l) => !l.checked);
+  const lines = deps.store.shop.get().lines.filter((l) => !l.checked && !l.inBasket);
   if (!lines.length) return { lines: [] };
   const items = new Map(deps.store.items.list().map((i) => [i.id, i]));
 
@@ -308,8 +308,8 @@ export async function planShop(deps: PlanDeps): Promise<NemligPlan> {
  * Fill the basket. Quantities are absolute and never lowered: if the basket
  * already holds more of something, that stays — so running this twice, or after
  * adding things by hand in Nemlig, never doubles up or takes anything away.
- * Every line that made it in is ticked off the list, and every item remembers
- * the product it was bought as.
+ * Every line that made it in is marked as in the basket, and every item
+ * remembers the product it was bought as.
  */
 export async function applyToBasket(
   entries: NemligApplyEntry[],
@@ -346,7 +346,7 @@ export async function applyToBasket(
         // basket — which did change — as failed.
         try {
           deps.store.items.setNemlig(e.itemId, { productId, name: e.productName, description: e.description });
-          deps.store.shop.setChecked(e.lineId, true);
+          deps.store.shop.setInBasket(e.lineId);
         } catch {
           /* gone meanwhile */
         }
