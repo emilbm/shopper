@@ -149,6 +149,8 @@ export interface Dinner {
   title: string;
   /** A local date, YYYY-MM-DD, or null when it has no day yet. */
   day: string | null;
+  /** The plan it belongs to. */
+  planId: number | null;
   /** Null for a dinner without one ('Takeaway'), or whose recipe was deleted. */
   recipeId: number | null;
   recipeName: string | null;
@@ -167,9 +169,34 @@ export interface PlanDay {
   dinners: Dinner[];
 }
 
+/** The current plan, as the planner shows it. */
 export interface WeekPlan {
+  id: number;
+  /** The plan's own first and last day. */
+  from: string;
+  to: string;
+  /** Its days from tomorrow on: today and earlier are already decided. */
   days: PlanDay[];
+  /**
+   * Earlier plans still being eaten — the next plan is often made before the
+   * last is over — with their days from tomorrow on.
+   */
+  earlier: Array<{ id: number; from: string; to: string; days: PlanDay[] }>;
   /** Planned, not cooked, and not on any day yet. */
+  unscheduled: Dinner[];
+  /** Every day of it has passed: time to start the next. */
+  ended: boolean;
+}
+
+/** A plan in the history: the days that had a dinner or a note. */
+export interface PlanSummary {
+  id: number;
+  from: string;
+  to: string;
+  current: boolean;
+  closedAt: string | null;
+  days: PlanDay[];
+  /** Dinners it had that never got a day. */
   unscheduled: Dinner[];
 }
 

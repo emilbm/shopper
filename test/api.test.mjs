@@ -508,12 +508,9 @@ test('dinners: planning one puts its recipe on the list, scaled, and follows cha
   assert.deepEqual(list.map((d) => d.title), ['Takeaway', 'Kylling i karry']);
   assert.ok(list[1].cookedAt);
 
-  // Clearing cooked dinners keeps what they left on the list.
-  const cleared = await call('POST', '/dinners/clear-cooked', {});
-  assert.equal(cleared.body.removed, 1);
-  ({ body: shop } = await call('GET', '/shop'));
-  assert.ok(line('Kyllingebryst'));
-  assert.ok(!shop.contributors.some((c) => c.kind === 'dinner' && c.refId === dinner.id));
+  // Cooked dinners are kept: they are the record of what was eaten.
+  assert.equal((await call('POST', '/dinners/clear-cooked', {})).status, 404);
+  assert.ok((await call('GET', `/dinners/${dinner.id}`)).body.cookedAt);
 });
 
 test('dinners: removing one takes its ingredients off, and a deleted recipe leaves the dinner', async () => {
@@ -736,9 +733,16 @@ test('recipe pictures: kept from an import, uploaded, fetched from a page, remov
   assert.equal(noPic.body.image, null);
 });
 
-test('week plan: dinners on days, notes, and moving between days', async () => {
-  const from = '2031-03-03';
+test('plans: dinners on days, notes, moving between days, and the next plan', async () => {
+  // The browser says today is 2 March, so the plan can start on the 3rd.
+  const today = '2031-03-02';
   const titles = (plan) => plan.days.map((d) => d.dinners.map((x) => x.title));
+  const get = async (t = today) => (await call('GET', `/plan?today=${t}`)).body;
+
+  let { body: plan } = await call('PATCH', '/plan', { from: '2031-03-03', to: '2031-03-05', today });
+  assert.deepEqual(plan.days.map((d) => d.day), ['2031-03-03', '2031-03-04', '2031-03-05']);
+  const firstPlan = plan.id;
+
   const { body: recipe } = await call('POST', '/recipes', {
     name: 'Pastaret',
     servings: 2,
@@ -746,33 +750,89 @@ test('week plan: dinners on days, notes, and moving between days', async () => {
   });
   const { body: monday } = await call('POST', '/dinners', { recipeId: recipe.id, day: '2031-03-03' });
   assert.equal(monday.day, '2031-03-03');
+  assert.equal(monday.planId, firstPlan);
   assert.equal(monday.onShop, true);
   await call('POST', '/dinners', { title: 'Takeaway', day: '2031-03-05', addToShop: false });
   const { body: loose } = await call('POST', '/dinners', { title: 'Rester', addToShop: false });
   assert.equal((await call('PUT', '/plan/2031-03-04/note', { note: 'Fodbold — spis tidligt' })).status, 204);
 
-  let { body: plan } = await call('GET', `/plan?from=${from}&days=3`);
-  assert.deepEqual(plan.days.map((d) => d.day), ['2031-03-03', '2031-03-04', '2031-03-05']);
+  plan = await get();
   assert.deepEqual(titles(plan), [['Pastaret'], [], ['Takeaway']]);
   assert.equal(plan.days[1].note, 'Fodbold — spis tidligt');
   assert.ok(plan.unscheduled.some((d) => d.id === loose.id));
+  assert.equal(plan.ended, false);
 
   // Move to another day; give one a day; an empty note is no note.
   await call('PATCH', `/dinners/${monday.id}`, { day: '2031-03-04' });
   await call('PATCH', `/dinners/${loose.id}`, { day: '2031-03-03' });
   await call('PUT', '/plan/2031-03-04/note', { note: '  ' });
-  ({ body: plan } = await call('GET', `/plan?from=${from}&days=3`));
+  plan = await get();
   assert.deepEqual(titles(plan), [['Rester'], ['Pastaret'], ['Takeaway']]);
   assert.equal(plan.days[1].note, '');
-  assert.equal(plan.unscheduled.some((d) => d.id === loose.id), false);
   // Moving a dinner leaves the shopping list alone.
   assert.equal(plan.days[1].dinners[0].onShop, true);
-
   await call('PATCH', `/dinners/${loose.id}`, { day: null });
-  ({ body: plan } = await call('GET', `/plan?from=${from}&days=3`));
-  assert.ok(plan.unscheduled.some((d) => d.id === loose.id));
+  await call('PUT', '/plan/2031-03-05/note', { note: 'Gæster' });
 
-  assert.equal((await call('GET', '/plan?from=3/3/2031&days=3')).status, 400);
+  // Today and earlier are never shown; once every day has passed, the plan is over.
+  assert.deepEqual((await get('2031-03-03')).days.map((d) => d.day), ['2031-03-04', '2031-03-05']);
+  const over = await get('2031-03-05');
+  assert.deepEqual(over.days, []);
+  assert.equal(over.ended, true);
+
+  // The next plan starts the day after this one ends, as long; dinners
+  // without a day come along, the rest stay where they were.
+  const next = await call('POST', '/plans', { today });
+  assert.equal(next.status, 201);
+  assert.notEqual(next.body.id, firstPlan);
+  assert.equal(next.body.from, '2031-03-06');
+  assert.equal(next.body.to, '2031-03-08');
+  assert.deepEqual(titles(next.body), [[], [], []]);
+  assert.ok(next.body.unscheduled.some((d) => d.id === loose.id));
+  // While the last plan is still being eaten, its remaining days show above
+  // this one's, and a dinner put on one of them stays in that plan.
+  assert.deepEqual(
+    next.body.earlier.map((e) => [e.id, e.days.map((d) => d.day)]),
+    [[firstPlan, ['2031-03-03', '2031-03-04', '2031-03-05']]],
+  );
+  const { body: pizza } = await call('POST', '/dinners', { title: 'Pizza', day: '2031-03-03', addToShop: false });
+  assert.equal(pizza.planId, firstPlan);
+  const { body: moved } = await call('PATCH', `/dinners/${loose.id}`, { day: '2031-03-07' });
+  assert.equal(moved.planId, next.body.id);
+  // This plan cannot reach back over days the last one still has.
+  assert.equal((await call('PATCH', '/plan', { from: '2031-03-05', to: '2031-03-08', today })).status, 409);
+  // Once those days have passed, only this plan is shown.
+  assert.deepEqual((await get('2031-03-05')).earlier, []);
+
+  // The cook view and the shop panel see the current plan, and what is still
+  // to be eaten from the last one; something cooked there is history.
+  const takeaway = (await call('GET', '/dinners')).body.find((d) => d.title === 'Takeaway');
+  await call('PATCH', `/dinners/${takeaway.id}`, { cooked: true });
+  const { body: current } = await call('GET', '/dinners');
+  assert.ok(current.some((d) => d.id === loose.id));
+  assert.ok(current.some((d) => d.id === monday.id));
+  assert.ok(!current.some((d) => d.id === takeaway.id));
+
+  // The first plan is kept, with what was planned on which day.
+  const { body: history } = await call('GET', '/plans');
+  assert.equal(history[0].id, next.body.id);
+  assert.equal(history[0].current, true);
+  const kept = history.find((h) => h.id === firstPlan);
+  assert.equal(kept.current, false);
+  assert.ok(kept.closedAt);
+  assert.deepEqual(
+    kept.days.map((d) => [d.day, d.dinners.map((x) => x.title), d.note]),
+    [
+      ['2031-03-03', ['Pizza'], ''],
+      ['2031-03-04', ['Pastaret'], ''],
+      ['2031-03-05', ['Takeaway'], 'Gæster'],
+    ],
+  );
+
+  // A plan's days can move, within reason.
+  assert.equal((await call('PATCH', '/plan', { from: '2031-03-08', to: '2031-03-06', today })).status, 409);
+  assert.equal((await call('PATCH', '/plan', { from: '2031-03-06', to: '2031-05-01', today })).status, 409);
+  assert.equal((await call('GET', '/plan?today=3/3/2031')).status, 400);
   assert.equal((await call('PATCH', `/dinners/${loose.id}`, { day: 'tomorrow' })).status, 400);
 });
 

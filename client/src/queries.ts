@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ShoppingList } from '../../shared/types';
 import { api } from './api';
+import { today } from './days';
 
 export const keys = {
   meta: ['meta'] as const,
@@ -11,6 +12,7 @@ export const keys = {
   lists: ['lists'] as const,
   dinners: ['dinners'] as const,
   plan: ['plan'] as const,
+  plans: ['plans'] as const,
 };
 
 export const useMeta = () => useQuery({ queryKey: keys.meta, queryFn: api.meta, staleTime: Infinity });
@@ -30,13 +32,16 @@ export const useRecipe = (id: number | null) =>
   });
 export const useLists = () => useQuery({ queryKey: keys.lists, queryFn: api.lists.list });
 export const useDinners = () => useQuery({ queryKey: keys.dinners, queryFn: api.dinners.list });
-export const usePlan = (from: string, days: number) =>
-  useQuery({
-    queryKey: [...keys.plan, from, days],
-    queryFn: () => api.plan.get(from, days),
-    // Adding a day keeps the days already shown on screen while the longer plan loads.
+/** The current plan, from tomorrow on — so it follows the date as well as the data. */
+export const usePlan = () => {
+  const day = today();
+  return useQuery({
+    queryKey: [...keys.plan, day],
+    queryFn: () => api.plan.get(day),
     placeholderData: (previous) => previous,
   });
+};
+export const usePlanHistory = () => useQuery({ queryKey: keys.plans, queryFn: api.plan.history });
 
 /**
  * Dinner changes ripple into the shopping list (planning one adds its
@@ -50,6 +55,7 @@ export function useDinnerMutation<A, R>(fn: (arg: A) => Promise<R>) {
       Promise.all([
         qc.invalidateQueries({ queryKey: keys.dinners }),
         qc.invalidateQueries({ queryKey: keys.plan }),
+        qc.invalidateQueries({ queryKey: keys.plans }),
         qc.invalidateQueries({ queryKey: keys.shop }),
         qc.invalidateQueries({ queryKey: keys.items }),
       ]),
@@ -71,6 +77,7 @@ export function useShopMutation<A>(fn: (arg: A) => Promise<ShoppingList>) {
       void qc.invalidateQueries({ queryKey: keys.items });
       void qc.invalidateQueries({ queryKey: keys.dinners });
       void qc.invalidateQueries({ queryKey: keys.plan });
+      void qc.invalidateQueries({ queryKey: keys.plans });
     },
   });
 }

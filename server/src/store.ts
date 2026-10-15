@@ -14,6 +14,8 @@ import type {
   SourceKind,
   StapleList,
   StapleListEntry,
+  PlanDay,
+  PlanSummary,
   WeekPlan,
 } from '../../shared/types.js';
 import { forShopping, normaliseUnit, scaleAmount, sumAmounts } from '../../shared/units.js';
@@ -757,6 +759,7 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
     id: number;
     title: string;
     day: string | null;
+    plan_id: number | null;
     recipe_id: number | null;
     recipe_name: string | null;
     servings: number;
@@ -770,6 +773,7 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
     id: r.id,
     title: r.title,
     day: r.day,
+    planId: r.plan_id,
     recipeId: r.recipe_id,
     recipeName: r.recipe_name,
     servings: r.servings,
@@ -785,13 +789,19 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
 
   const dinners = {
     /**
-     * Still to cook first — those with a day in day order, then the rest in
-     * the order planned — and then what has been cooked, latest first.
+     * The dinners still in play: the current plan's, and any from an earlier
+     * plan not yet cooked and not yet past — the next plan is often made
+     * while the last one is still being eaten. Still to cook first, those
+     * with a day in day order, then the rest as planned; then what has been
+     * cooked, latest first. Everything else is history.
      */
     list(): Dinner[] {
       return db
         .all<DinnerRow>(
-          `${DINNER_SQL} ORDER BY d.cooked_at IS NOT NULL, d.cooked_at DESC, d.day IS NULL, d.day, d.position, d.id`,
+          `${DINNER_SQL}
+            WHERE d.plan_id = ? OR (d.cooked_at IS NULL AND d.day >= date('now', 'localtime'))
+            ORDER BY d.cooked_at IS NOT NULL, d.cooked_at DESC, d.day IS NULL, d.day, d.position, d.id`,
+          plan.currentId(),
         )
         .map(toDinner);
     },
@@ -817,7 +827,8 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
       const id = db.tx(() => {
         const pos = db.get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM dinners')!.p;
         const newId = db.run(
-          'INSERT INTO dinners (title, recipe_id, servings, note, day, position) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO dinners (plan_id, title, recipe_id, servings, note, day, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          plan.idFor(input.day ?? null),
           title,
           recipe?.id ?? null,
           input.servings ?? recipe?.servings ?? 4,
@@ -849,6 +860,9 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
       const before = dinners.get(id);
       db.tx(() => {
         if (patch.recipeId !== undefined && patch.recipeId !== null) recipes.get(patch.recipeId);
+        if (patch.day !== undefined && patch.day !== before.day) {
+          db.run('UPDATE dinners SET plan_id = ? WHERE id = ?', plan.idFor(patch.day), id);
+        }
         db.run(
           'UPDATE dinners SET title = ?, recipe_id = ?, servings = ?, note = ?, day = ?, cooked_at = ? WHERE id = ?',
           patch.title?.trim() || before.title,
@@ -882,40 +896,170 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
         db.run('DELETE FROM dinners WHERE id = ?', id);
       });
     },
-
-    /** A new week: what has been cooked goes. Anything it left on the list stays there. */
-    clearCooked(): number {
-      return db.tx(() => {
-        db.run(
-          `UPDATE shop_sources SET ref_id = NULL
-            WHERE kind = 'dinner' AND ref_id IN (SELECT id FROM dinners WHERE cooked_at IS NOT NULL)`,
-        );
-        return db.run('DELETE FROM dinners WHERE cooked_at IS NOT NULL').changes;
-      });
-    },
   };
 
-  /* ------------------------------------------------------ week planner */
+  /* ------------------------------------------------------------- plans */
 
+  interface PlanRow {
+    id: number;
+    from_day: string;
+    to_day: string;
+    created_at: string;
+    closed_at: string | null;
+  }
+
+  const daysOf = (from: string, to: string): string[] => {
+    const out: string[] = [];
+    for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) out.push(d);
+    return out;
+  };
+
+  const notesBetween = (from: string, to: string) =>
+    new Map(
+      db
+        .all<{ day: string; note: string }>('SELECT day, note FROM day_notes WHERE day BETWEEN ? AND ?', from, to)
+        .map((n) => [n.day, n.note]),
+    );
+
+  /** A plan's days from `from` on, each with its dinners and note. */
+  function planDays(row: PlanRow, from: string): PlanDay[] {
+    const dated = db
+      .all<DinnerRow>(`${DINNER_SQL} WHERE d.plan_id = ? AND d.day IS NOT NULL ORDER BY d.position, d.id`, row.id)
+      .map(toDinner);
+    const notes = notesBetween(from, row.to_day);
+    return daysOf(from, row.to_day).map((day) => ({
+      day,
+      note: notes.get(day) ?? '',
+      dinners: dated.filter((d) => d.day === day),
+    }));
+  }
+
+  /**
+   * A plan is a run of days and the dinners on them — the week planned before
+   * a delivery, say. One is current; starting the next files it away, and
+   * the plans that are over are the household's record of what it ate.
+   */
   const plan = {
-    /** `days` days from `from` (YYYY-MM-DD), each with its dinners and note. */
-    get(from: string, days: number): WeekPlan {
-      const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
-      const to = dates.at(-1)!;
-      const dated = db
-        .all<DinnerRow>(`${DINNER_SQL} WHERE d.day BETWEEN ? AND ? ORDER BY d.position, d.id`, from, to)
-        .map(toDinner);
-      const notes = new Map(
-        db.all<{ day: string; note: string }>('SELECT day, note FROM day_notes WHERE day BETWEEN ? AND ?', from, to).map(
-          (n) => [n.day, n.note],
-        ),
+    current(): PlanRow {
+      const row = db.get<PlanRow>('SELECT * FROM plans WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1');
+      if (row) return row;
+      // Only reached if every plan was closed by hand: the migration makes the first.
+      const today = new Date().toLocaleDateString('sv-SE');
+      const id = db.run('INSERT INTO plans (from_day, to_day) VALUES (?, ?)', addDays(today, 1), addDays(today, 7))
+        .lastInsertRowid;
+      return db.get<PlanRow>('SELECT * FROM plans WHERE id = ?', id)!;
+    },
+
+    currentId: (): number => plan.current().id,
+
+    /**
+     * The plan a day belongs to: the current one if it covers the day, else
+     * the latest earlier plan that does — the last plan's remaining days are
+     * still its own — else the current one. A dinner with no day goes with
+     * the current plan.
+     */
+    idFor(day: string | null): number {
+      const current = plan.current();
+      if (day === null || (day >= current.from_day && day <= current.to_day)) return current.id;
+      const earlier = db.get<{ id: number }>(
+        'SELECT id FROM plans WHERE closed_at IS NOT NULL AND ? BETWEEN from_day AND to_day ORDER BY id DESC LIMIT 1',
+        day,
       );
+      return earlier?.id ?? current.id;
+    },
+
+    /** The last plan before the current one, if any. */
+    previous(): PlanRow | undefined {
+      return db.get<PlanRow>('SELECT * FROM plans WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 1');
+    },
+
+    /**
+     * The current plan as the planner shows it: never today or earlier —
+     * tonight's dinner is decided — so the days run from tomorrow at the
+     * earliest. `today` is the browser's, which is the household's.
+     */
+    get(today: string): WeekPlan {
+      const row = plan.current();
+      const tomorrow = addDays(today, 1);
+      const from = row.from_day > tomorrow ? row.from_day : tomorrow;
+      // Earlier plans still being eaten: their days from tomorrow on.
+      const earlier = db
+        .all<PlanRow>('SELECT * FROM plans WHERE closed_at IS NOT NULL AND to_day >= ? ORDER BY from_day', tomorrow)
+        .map((p) => ({
+          id: p.id,
+          from: p.from_day,
+          to: p.to_day,
+          days: planDays(p, p.from_day > tomorrow ? p.from_day : tomorrow),
+        }));
       return {
-        days: dates.map((day) => ({ day, note: notes.get(day) ?? '', dinners: dated.filter((d) => d.day === day) })),
+        id: row.id,
+        from: row.from_day,
+        to: row.to_day,
+        earlier,
+        days: from <= row.to_day ? planDays(row, from) : [],
+        ended: row.to_day < tomorrow,
         unscheduled: db
-          .all<DinnerRow>(`${DINNER_SQL} WHERE d.day IS NULL AND d.cooked_at IS NULL ORDER BY d.position, d.id`)
+          .all<DinnerRow>(
+            `${DINNER_SQL} WHERE d.plan_id = ? AND d.day IS NULL AND d.cooked_at IS NULL ORDER BY d.position, d.id`,
+            row.id,
+          )
           .map(toDinner),
       };
+    },
+
+    /** Move the current plan's first or last day. */
+    setRange(from: string, to: string): void {
+      if (from > to) throw new ConflictError('A plan ends on or after the day it starts');
+      if (daysOf(from, to).length > 31) throw new ConflictError('A plan is at most 31 days');
+      const previous = plan.previous();
+      if (previous && from <= previous.to_day) {
+        throw new ConflictError(`The last plan runs until ${previous.to_day}; this one starts after it`);
+      }
+      db.run('UPDATE plans SET from_day = ?, to_day = ? WHERE id = ?', from, to, plan.currentId());
+    },
+
+    /**
+     * File the current plan away and start the next: from the day after it
+     * ends, or tomorrow if that has passed, and as many days long. Dinners
+     * that never got a day are still wanted, so they come along.
+     */
+    startNext(today: string): void {
+      db.tx(() => {
+        const old = plan.current();
+        const length = Math.min(daysOf(old.from_day, old.to_day).length, 31);
+        const after = addDays(old.to_day, 1);
+        const tomorrow = addDays(today, 1);
+        const from = after > tomorrow ? after : tomorrow;
+        db.run('UPDATE plans SET closed_at = ? WHERE id = ?', now(), old.id);
+        const id = db.run('INSERT INTO plans (from_day, to_day) VALUES (?, ?)', from, addDays(from, length - 1))
+          .lastInsertRowid;
+        db.run('UPDATE dinners SET plan_id = ? WHERE plan_id = ? AND day IS NULL AND cooked_at IS NULL', id, old.id);
+      });
+    },
+
+    /**
+     * Every plan, newest first, with the days that had a dinner or a note.
+     * Days come from the dinners themselves, so a dinner stays in the record
+     * even if the plan's first day was moved past it later.
+     */
+    history(): PlanSummary[] {
+      return db.all<PlanRow>('SELECT * FROM plans ORDER BY from_day DESC, id DESC').map((row) => {
+        const all = db
+          .all<DinnerRow>(`${DINNER_SQL} WHERE d.plan_id = ? ORDER BY d.position, d.id`, row.id)
+          .map(toDinner);
+        const dated = all.filter((d) => d.day !== null);
+        const notes = notesBetween(row.from_day, row.to_day);
+        const days = [...new Set([...dated.map((d) => d.day!), ...notes.keys()])].sort();
+        return {
+          id: row.id,
+          from: row.from_day,
+          to: row.to_day,
+          current: row.closed_at === null,
+          closedAt: row.closed_at,
+          days: days.map((day) => ({ day, note: notes.get(day) ?? '', dinners: dated.filter((d) => d.day === day) })),
+          unscheduled: all.filter((d) => d.day === null),
+        };
+      });
     },
 
     /** An empty note is no note. */

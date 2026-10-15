@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { dayLabel } from '../days';
-import { useFillList, usePlanWindow } from '../planWindow';
+import { useFillList } from '../planWindow';
 import { useDinnerMutation, usePlan } from '../queries';
 import { ErrorBanner, IconPot, Sheet, Spinner } from './ui';
 
@@ -20,8 +20,7 @@ export function PlanRecipeSheet({
   onClose: () => void;
   onPlanned: (day: string) => void;
 }) {
-  const range = usePlanWindow();
-  const plan = usePlan(range.from, range.count);
+  const plan = usePlan();
   const [fillList, setFillList] = useFillList();
   const add = useDinnerMutation((day: string) => api.dinners.add({ recipeId, day, addToShop: fillList }));
 

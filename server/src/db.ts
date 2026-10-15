@@ -178,6 +178,28 @@ const MIGRATIONS: string[] = [
   ALTER TABLE shop_lines ADD COLUMN edited_unit TEXT;
   ALTER TABLE shop_lines ADD COLUMN edited_upto INTEGER;
   `,
+
+  // 6 — plans: a run of days and the dinners planned on them, kept after
+  // they are over as the household's record of what it ate. One is current
+  // (closed_at null). The dinners there are already become the first plan.
+  `
+  CREATE TABLE plans (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_day   TEXT NOT NULL,
+    to_day     TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    closed_at  TEXT
+  );
+
+  ALTER TABLE dinners ADD COLUMN plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL;
+  CREATE INDEX idx_dinners_plan ON dinners(plan_id);
+
+  INSERT INTO plans (from_day, to_day)
+  SELECT COALESCE(MIN(day), date('now', 'localtime', '+1 day')),
+         COALESCE(MAX(day), date('now', 'localtime', '+7 day'))
+    FROM dinners;
+  UPDATE dinners SET plan_id = (SELECT MAX(id) FROM plans);
+  `,
 ];
 
 export function openDatabase(path: string): Db {

@@ -11,6 +11,7 @@ import ListEditPage from './pages/ListEditPage';
 import ListsPage from './pages/ListsPage';
 import NemligPage from './pages/NemligPage';
 import PlanPage from './pages/PlanPage';
+import PlansPage from './pages/PlansPage';
 import RecipeEditPage from './pages/RecipeEditPage';
 import RecipeImportPage from './pages/RecipeImportPage';
 import RecipePage from './pages/RecipePage';
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/shop/nemlig" element={<NemligPage />} />
           <Route path="/plan" element={<PlanPage />} />
+          <Route path="/plans" element={<PlansPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<RecipeEditPage />} />
           <Route path="/recipes/import" element={<RecipeImportPage />} />

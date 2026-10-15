@@ -299,17 +299,30 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
     return reply.status(204).send();
   });
 
-  app.post('/api/dinners/clear-cooked', async () => ({ removed: store.dinners.clearCooked() }));
+  /* ------------------------------------------------------------- plans */
 
-  /* ------------------------------------------------------ week planner */
+  // The browser says what today is, so "tomorrow" is the household's.
+  const todayQuery = z.object({ today: day });
 
-  /** The days from `from`, which the browser gives so "today" is the household's today. */
-  app.get('/api/plan', async (req) => {
-    const { from, days } = z
-      .object({ from: day, days: z.coerce.number().int().min(1).max(31).default(7) })
-      .parse(req.query);
-    return store.plan.get(from, days);
+  /** The current plan, from tomorrow on. */
+  app.get('/api/plan', async (req) => store.plan.get(todayQuery.parse(req.query).today));
+
+  /** Move the current plan's first or last day. */
+  app.patch('/api/plan', async (req) => {
+    const { from, to, today } = z.object({ from: day, to: day, today: day }).parse(req.body);
+    store.plan.setRange(from, to);
+    return store.plan.get(today);
   });
+
+  /** File the current plan away and start the next. */
+  app.post('/api/plans', async (req, reply) => {
+    const { today } = z.object({ today: day }).parse(req.body);
+    store.plan.startNext(today);
+    return reply.status(201).send(store.plan.get(today));
+  });
+
+  /** Every plan, newest first: what was planned, and so what was eaten. */
+  app.get('/api/plans', async () => store.plan.history());
 
   app.put('/api/plan/:day/note', async (req, reply) => {
     const params = z.object({ day }).parse(req.params);

@@ -10,6 +10,7 @@ import type {
   RecipeDraft,
   RecipeSummary,
   ShoppingList,
+  PlanSummary,
   StapleList,
   WeekPlan,
 } from '../../shared/types';
@@ -151,7 +152,12 @@ export const api = {
   },
 
   plan: {
-    get: (from: string, days: number) => request<WeekPlan>('GET', `/plan?from=${from}&days=${days}`),
+    /** The current plan; `today` is this browser's, so "tomorrow" is the household's. */
+    get: (today: string) => request<WeekPlan>('GET', `/plan?today=${today}`),
+    setRange: (from: string, to: string, today: string) => request<WeekPlan>('PATCH', '/plan', { from, to, today }),
+    /** File the current plan away and start the next. */
+    startNext: (today: string) => request<WeekPlan>('POST', '/plans', { today }),
+    history: () => request<PlanSummary[]>('GET', '/plans'),
     setNote: (day: string, note: string) => request<void>('PUT', `/plan/${day}/note`, { note }),
   },
 
@@ -174,7 +180,6 @@ export const api = {
     update: (id: number, patch: DinnerPatch) => request<Dinner>('PATCH', `/dinners/${id}`, patch),
     remove: (id: number, keepOnShop = false) =>
       request<void>('DELETE', `/dinners/${id}${keepOnShop ? '?keepOnShop=true' : ''}`),
-    clearCooked: () => request<{ removed: number }>('POST', '/dinners/clear-cooked', {}),
   },
 
   shop: {

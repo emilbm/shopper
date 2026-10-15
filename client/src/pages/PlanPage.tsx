@@ -6,10 +6,11 @@ import { api } from '../api';
 import { ErrorBanner, IconCart, IconCheck, IconClose, IconMinus, IconPlus, IconPot, Spinner, useConfirm } from '../components/ui';
 import { dayLabel, isWeekend, shortDate, today, weekday } from '../days';
 import { useFillList, usePlanWindow, useStored } from '../planWindow';
-import { keys, useDinnerMutation, usePlan, useRecipes } from '../queries';
+import { keys, useDinnerMutation, useRecipes } from '../queries';
 
 /** What a drop target spreads onto its element. */
 interface DropProps {
+  onDragEnter: (e: DragEvent) => void;
   onDragOver: (e: DragEvent) => void;
   onDragLeave: (e: DragEvent) => void;
   onDrop: (e: DragEvent) => void;
@@ -30,29 +31,45 @@ export default function PlanPage() {
   const range = usePlanWindow();
   const [fillList, setFillList] = useFillList();
   const [showRecipes, setShowRecipes] = useStored('grocer.plan.recipes', true);
-  const plan = usePlan(range.from, range.count);
+  const plan = range.plan;
+  const { confirm, dialog } = useConfirm();
+  const startNext = useDinnerMutation(() => api.plan.startNext(today()));
   const recipes = useRecipes();
   const [over, setOver] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
 
   const add = useDinnerMutation(api.dinners.add);
   const move = useDinnerMutation((a: { id: number; day: string | null }) => api.dinners.update(a.id, { day: a.day }));
 
+  // While a dinner or recipe is dragged, the days' text fields stop taking
+  // the mouse: a field would otherwise claim the drop for itself, and they
+  // cover most of a day. It is a class on <body>, set a frame after the drag
+  // starts, because Chrome abandons a drag whose page changes during dragstart.
   useEffect(() => {
+    const start = (e: globalThis.DragEvent) => {
+      const types = e.dataTransfer?.types ?? [];
+      if (types.includes(DINNER) || types.includes(RECIPE)) {
+        requestAnimationFrame(() => document.body.classList.add('plan-dragging'));
+      }
+    };
     const end = () => {
-      setDragging(false);
+      document.body.classList.remove('plan-dragging');
       setOver(null);
     };
+    document.addEventListener('dragstart', start);
     document.addEventListener('dragend', end);
     document.addEventListener('drop', end);
     return () => {
+      end();
+      document.removeEventListener('dragstart', start);
       document.removeEventListener('dragend', end);
       document.removeEventListener('drop', end);
     };
   }, []);
 
   /** The dinner on a day, if any: a day has at most one. */
-  const dinnerOn = (day: string) => plan.data?.days.find((d) => d.day === day)?.dinners[0];
+  /** Every day on screen: the last plan's remaining days, then this plan's. */
+  const allDays = [...(plan.data?.earlier.flatMap((e) => e.days) ?? []), ...(plan.data?.days ?? [])];
+  const dinnerOn = (day: string) => allDays.find((d) => d.day === day)?.dinners[0];
 
   /**
    * Drop handlers for a day, or for the "no day yet" tray when `day` is null.
@@ -61,14 +78,18 @@ export default function PlanPage() {
    */
   const dropTarget = (day: string | null): DropProps => {
     const key = day ?? 'none';
+    // Accepting on dragenter as well as dragover: Chrome decides on either,
+    // and a quick drop can land before the first dragover.
+    const accept = (e: DragEvent) => {
+      const types = e.dataTransfer.types;
+      if (!types.includes(DINNER) && !(types.includes(RECIPE) && day && !dinnerOn(day))) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = types.includes(DINNER) ? 'move' : 'copy';
+      if (over !== key) setOver(key);
+    };
     return {
-      onDragOver: (e: DragEvent) => {
-        const types = e.dataTransfer.types;
-        if (!types.includes(DINNER) && !(types.includes(RECIPE) && day && !dinnerOn(day))) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = e.dataTransfer.types.includes(DINNER) ? 'move' : 'copy';
-        if (over !== key) setOver(key);
-      },
+      onDragEnter: accept,
+      onDragOver: accept,
       onDragLeave: (e: DragEvent) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((o) => (o === key ? null : o));
       },
@@ -78,7 +99,7 @@ export default function PlanPage() {
         const dinnerId = Number(e.dataTransfer.getData(DINNER));
         const recipeId = Number(e.dataTransfer.getData(RECIPE));
         if (dinnerId) {
-          const all = [...(plan.data?.days.flatMap((d) => d.dinners) ?? []), ...unscheduled];
+          const all = [...allDays.flatMap((d) => d.dinners), ...unscheduled];
           const from = all.find((d) => d.id === dinnerId)?.day ?? null;
           const there = day ? dinnerOn(day) : undefined;
           if (from === day) return;
@@ -95,17 +116,33 @@ export default function PlanPage() {
   const unscheduled = plan.data?.unscheduled ?? [];
   const planned = plan.data?.days.reduce((n, d) => n + d.dinners.length, 0) ?? 0;
 
+  const newPlan = async () => {
+    const ok = await confirm({
+      title: 'Start a new plan?',
+      body: 'This plan is kept under Past plans. Dinners without a day move to the new one.',
+      confirmLabel: 'Start a new plan',
+    });
+    if (ok) startNext.mutate(undefined);
+  };
+
   return (
     <>
       <header className="header plan-header">
         <h1>
-          Week plan{' '}
+          Plan{' '}
           {plan.data && (
             <span className="sub">
-              {planned} of {range.count} days planned
+              {shortDate(plan.data.from)} – {shortDate(plan.data.to)}
+              {plan.data.days.length > 0 && ` · ${planned} of ${plan.data.days.length} days planned`}
             </span>
           )}
         </h1>
+        <Link className="btn btn--quiet btn--sm" to="/plans">
+          Past plans
+        </Link>
+        <button className="btn btn--ghost btn--sm" disabled={!plan.data || startNext.isPending} onClick={() => void newPlan()}>
+          <IconPlus size={16} /> New plan
+        </button>
         <button className="btn btn--ghost btn--sm plan-header__shelf" aria-pressed={showRecipes} onClick={() => setShowRecipes(!showRecipes)}>
           {showRecipes ? 'Hide recipes' : 'Show recipes'}
         </button>
@@ -124,16 +161,26 @@ export default function PlanPage() {
           </div>
 
           {plan.isLoading && <Spinner />}
-          <ErrorBanner error={plan.error ?? add.error ?? move.error} />
+          <ErrorBanner error={plan.error ?? add.error ?? move.error ?? range.error ?? startNext.error} />
+          {plan.data?.ended && (
+            <div className="banner banner--info row row--between row--wrap">
+              <span>This plan is over. Start the next one to plan the coming days; this one stays under Past plans.</span>
+              <button className="btn btn--primary btn--sm" disabled={startNext.isPending} onClick={() => startNext.mutate(undefined)}>
+                Start the next plan
+              </button>
+            </div>
+          )}
 
-          {(unscheduled.length > 0 || dragging) && (
+          {/* Always there, so nothing moves under a drag: Chrome abandons a drag
+              whose page changes as it starts, and a target that jumps is hard to hit. */}
+          {plan.data && (
             <section className="plan-tray" {...dropTarget(null)}>
               <h2 className="section-title">No day yet</h2>
               <div className="plan-tray__list">
                 {unscheduled.map((d) => (
-                  <DinnerChip key={d.id} dinner={d} onDragStart={() => setDragging(true)} />
+                  <DinnerChip key={d.id} dinner={d} />
                 ))}
-                {unscheduled.length === 0 && <p className="small faint" style={{ margin: 0 }}>Drop here to take a dinner off its day.</p>}
+                {unscheduled.length === 0 && <p className="small faint" style={{ margin: 0 }}>Drag a dinner here to take it off its day.</p>}
               </div>
             </section>
           )}
@@ -141,6 +188,33 @@ export default function PlanPage() {
           <datalist id="plan-recipes">
             {recipes.data?.map((r) => <option key={r.id} value={r.name} />)}
           </datalist>
+
+          {/* The last plan, while it is still being eaten: its days stay
+              plannable here, and what goes on them stays in that plan. */}
+          {plan.data?.earlier.map((e) => (
+            <section key={e.id} className="plan-earlier">
+              <h2 className="section-title">
+                Rest of the last plan · {shortDate(e.from)} – {shortDate(e.to)}
+              </h2>
+              <div className="plan-days">
+                {e.days.map((d) => (
+                  <DayColumn
+                    key={d.day}
+                    day={d}
+                    now={now}
+                    recipes={recipes.data ?? []}
+                    fillList={fillList}
+                    dropProps={dropTarget(d.day)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+          {!!plan.data?.earlier.length && (
+            <h2 className="section-title">
+              This plan · {shortDate(plan.data.from)} – {shortDate(plan.data.to)}
+            </h2>
+          )}
 
           {plan.data && (
             <div className="row plan-more plan-more--top">
@@ -166,7 +240,6 @@ export default function PlanPage() {
                   recipes={recipes.data ?? []}
                   fillList={fillList}
                   dropProps={dropTarget(d.day)}
-                  onDragStart={() => setDragging(true)}
                 />
               ))}
             </div>
@@ -191,10 +264,11 @@ export default function PlanPage() {
 
         {showRecipes && (
           <aside className="plan__recipes">
-            <RecipeShelf recipes={recipes.data ?? []} onDragStart={() => setDragging(true)} />
+            <RecipeShelf recipes={recipes.data ?? []} />
           </aside>
         )}
       </main>
+      {dialog}
     </>
   );
 }
@@ -205,14 +279,12 @@ function DayColumn({
   recipes,
   fillList,
   dropProps,
-  onDragStart,
 }: {
   day: PlanDay;
   now: string;
   recipes: RecipeSummary[];
   fillList: boolean;
   dropProps: DropProps;
-  onDragStart: () => void;
 }) {
   const [text, setText] = useState('');
   const add = useDinnerMutation(api.dinners.add);
@@ -241,7 +313,7 @@ function DayColumn({
       <div className="plan-day__body">
         <div className="plan-day__dinners">
           {day.dinners.map((d) => (
-            <DinnerCard key={d.id} dinner={d} onDragStart={onDragStart} />
+            <DinnerCard key={d.id} dinner={d} />
           ))}
         </div>
 
@@ -278,7 +350,7 @@ function DayColumn({
   );
 }
 
-function DinnerCard({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: () => void }) {
+function DinnerCard({ dinner: d }: { dinner: Dinner }) {
   const { confirm, dialog } = useConfirm();
   const remove = useDinnerMutation(() => api.dinners.remove(d.id));
   const putOn = useDinnerMutation(() => api.shop.addDinner(d.id));
@@ -301,7 +373,6 @@ function DinnerCard({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: (
       onDragStart={(e) => {
         e.dataTransfer.setData(DINNER, String(d.id));
         e.dataTransfer.effectAllowed = 'move';
-        onDragStart();
       }}
     >
       <div className="row plan-dinner__top">
@@ -337,7 +408,7 @@ function DinnerCard({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: (
   );
 }
 
-function DinnerChip({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: () => void }) {
+function DinnerChip({ dinner: d }: { dinner: Dinner }) {
   return (
     <span
       className="chip plan-chip"
@@ -345,7 +416,6 @@ function DinnerChip({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: (
       onDragStart={(e) => {
         e.dataTransfer.setData(DINNER, String(d.id));
         e.dataTransfer.effectAllowed = 'move';
-        onDragStart();
       }}
       title="Drag onto a day"
     >
@@ -401,7 +471,7 @@ function NoteField({ day, note, label }: { day: string; note: string; label: str
   );
 }
 
-function RecipeShelf({ recipes, onDragStart }: { recipes: RecipeSummary[]; onDragStart: () => void }) {
+function RecipeShelf({ recipes }: { recipes: RecipeSummary[] }) {
   const [filter, setFilter] = useState('');
   const [tag, setTag] = useState<string | null>(null);
   const q = filter.trim().toLowerCase();
@@ -431,7 +501,6 @@ function RecipeShelf({ recipes, onDragStart }: { recipes: RecipeSummary[]; onDra
             onDragStart={(e) => {
               e.dataTransfer.setData(RECIPE, String(r.id));
               e.dataTransfer.effectAllowed = 'copy';
-              onDragStart();
             }}
             title="Drag onto a day"
           >

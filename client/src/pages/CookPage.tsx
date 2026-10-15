@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Dinner } from '../../../shared/types';
-import { api } from '../api';
 import { AddDinnerSheet } from '../components/AddDinnerSheet';
-import { EmptyState, ErrorBanner, IconCart, IconCheck, IconChevron, IconPlus, Spinner, useConfirm } from '../components/ui';
+import { EmptyState, ErrorBanner, IconCart, IconCheck, IconChevron, IconPlus, Spinner } from '../components/ui';
 import { dayLabel } from '../days';
-import { useDinnerMutation, useDinners } from '../queries';
+import { useDinners } from '../queries';
 
 /** "Tirsdag" for something cooked this week, a date for anything older. */
 function cookedWhen(iso: string): string {
@@ -19,8 +18,6 @@ function cookedWhen(iso: string): string {
 export default function CookPage() {
   const dinners = useDinners();
   const [adding, setAdding] = useState(false);
-  const clearCooked = useDinnerMutation(api.dinners.clearCooked);
-  const { confirm, dialog } = useConfirm();
 
   const toCook = dinners.data?.filter((d) => !d.cookedAt) ?? [];
   const cooked = dinners.data?.filter((d) => d.cookedAt) ?? [];
@@ -39,7 +36,7 @@ export default function CookPage() {
 
       <main className="main main--cook">
         {dinners.isLoading && <Spinner />}
-        <ErrorBanner error={dinners.error ?? clearCooked.error} />
+        <ErrorBanner error={dinners.error} />
 
         {dinners.data && dinners.data.length === 0 && (
           <EmptyState
@@ -60,22 +57,8 @@ export default function CookPage() {
 
         {cooked.length > 0 && (
           <section>
-            <div className="row row--between">
-              <h2 className="section-title">Cooked</h2>
-              <button
-                className="btn btn--quiet btn--sm"
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: 'Clear the cooked dinners?',
-                    body: 'Ready for a new week. Anything they left on the shopping list stays there.',
-                    confirmLabel: `Clear ${cooked.length}`,
-                  });
-                  if (ok) clearCooked.mutate(undefined);
-                }}
-              >
-                Clear
-              </button>
-            </div>
+            {/* Cooked dinners stay in their plan: that is the record of what was eaten. */}
+            <h2 className="section-title">Cooked</h2>
             <div className="card card--flush">
               {cooked.map((d) => (
                 <Link key={d.id} to={`/cook/${d.id}`} className="list__row dinner-done">
@@ -92,7 +75,6 @@ export default function CookPage() {
       </main>
 
       {adding && <AddDinnerSheet onClose={() => setAdding(false)} defaultAddToShop={false} />}
-      {dialog}
     </>
   );
 }
