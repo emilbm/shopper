@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { formatAmount, scaleAmount } from '../../../shared/units';
-import { api } from '../api';
 import { Stepper } from '../components/EntryEditor';
+import { PlanRecipeSheet } from '../components/PlanRecipeSheet';
 import { ErrorBanner, IconBack, IconEdit, IconLink, IconPot, Spinner } from '../components/ui';
-import { useDinnerMutation, useDinners, useRecipe } from '../queries';
+import { dayLabel } from '../days';
+import { useDinners, useRecipe } from '../queries';
 
 export default function RecipePage() {
   const id = Number(useParams().id);
@@ -12,7 +13,7 @@ export default function RecipePage() {
   const recipe = useRecipe(id);
   const dinners = useDinners();
   const [servings, setServings] = useState<number | null>(null);
-  const add = useDinnerMutation((n: number) => api.dinners.add({ recipeId: id, servings: n }));
+  const [choosingDay, setChoosingDay] = useState(false);
 
   useEffect(() => {
     if (recipe.data && servings === null) setServings(recipe.data.servings);
@@ -21,7 +22,7 @@ export default function RecipePage() {
   const r = recipe.data;
   const want = servings ?? r?.servings ?? 1;
   const factor = r && r.servings > 0 ? want / r.servings : 1;
-  const planned = dinners.data?.some((d) => d.recipeId === id && !d.cookedAt);
+  const planned = dinners.data?.filter((d) => d.recipeId === id && !d.cookedAt) ?? [];
 
   return (
     <>
@@ -69,19 +70,16 @@ export default function RecipePage() {
                 <span className="muted">Servings</span>
                 <Stepper label="Servings" value={want} onChange={setServings} />
               </div>
-              <button
-                className="btn btn--primary btn--block btn--lg"
-                disabled={add.isPending}
-                onClick={() => add.mutate(want)}
-              >
-                <IconPot size={20} /> {add.isSuccess ? 'Planned — plan it again?' : 'Plan for this week'}
+              <button className="btn btn--primary btn--block btn--lg" onClick={() => setChoosingDay(true)}>
+                <IconPot size={20} /> {planned.length ? 'Plan it on another day…' : 'Plan it on a day…'}
               </button>
-              {planned && !add.isSuccess && (
-                <p className="small faint" style={{ margin: 0 }}>
-                  Already planned this week. Planning it again puts a second batch on the list.
+              {planned.length > 0 && (
+                <p className="small muted" style={{ margin: 0 }}>
+                  Planned for{' '}
+                  {planned.map((d) => (d.day ? dayLabel(d.day) : 'this week, no day yet')).join(', ')}.{' '}
+                  <Link to="/plan">Week plan</Link>
                 </p>
               )}
-              <ErrorBanner error={add.error} />
             </div>
 
             <h2 className="section-title">Ingredients</h2>
@@ -121,6 +119,15 @@ export default function RecipePage() {
           </div>
         )}
       </main>
+      {choosingDay && r && (
+        <PlanRecipeSheet
+          recipeId={r.id}
+          name={r.name}
+          servings={want}
+          onClose={() => setChoosingDay(false)}
+          onPlanned={() => setChoosingDay(false)}
+        />
+      )}
     </>
   );
 }

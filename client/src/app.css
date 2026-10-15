@@ -941,15 +941,6 @@ kbd {
 
 /* ------------------------------------------------------------ week plan */
 
-.flip {
-  display: inline-flex;
-  transform: scaleX(-1);
-}
-
-.plan-nav {
-  gap: 2px;
-}
-
 .checkline--inline {
   min-height: 36px;
   padding: 4px 10px;
@@ -1052,15 +1043,6 @@ kbd {
   background: color-mix(in srgb, var(--surface-2) 60%, var(--surface));
 }
 
-.plan-day--today {
-  border-color: var(--accent);
-  box-shadow: inset 0 3px 0 var(--accent);
-}
-
-.plan-day--past {
-  opacity: 0.7;
-}
-
 .plan-day__head {
   display: flex;
   align-items: baseline;
@@ -1068,10 +1050,6 @@ kbd {
   gap: 6px;
   margin: 0;
   font-size: 0.95rem;
-}
-
-.plan-day--today .plan-day__weekday {
-  color: var(--accent-text);
 }
 
 .plan-day__date {
@@ -1245,4 +1223,24 @@ kbd {
 
 .plan-more {
   margin-top: 10px;
+}
+
+.plan-more--top {
+  margin: 0 0 10px;
+}
+
+.plan-more--top:empty {
+  display: none;
+}
+
+.day-pick__day {
+  flex: none;
+  width: 110px;
+  font-weight: 600;
+}
+
+/* A day that already has its dinner: shown for context, not to pick. */
+.day-pick:disabled {
+  cursor: default;
+  opacity: 0.55;
 }

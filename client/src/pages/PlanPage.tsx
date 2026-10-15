@@ -3,35 +3,10 @@ import { useEffect, useState, type DragEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { Dinner, PlanDay, RecipeSummary } from '../../../shared/types';
 import { api } from '../api';
-import { ErrorBanner, IconCart, IconCheck, IconChevron, IconClose, IconMinus, IconPlus, IconPot, Spinner, useConfirm } from '../components/ui';
-import { addDays, dayLabel, isWeekend, shortDate, today, weekday } from '../days';
+import { ErrorBanner, IconCart, IconCheck, IconClose, IconMinus, IconPlus, IconPot, Spinner, useConfirm } from '../components/ui';
+import { dayLabel, isWeekend, shortDate, today, weekday } from '../days';
+import { useFillList, usePlanWindow, useStored } from '../planWindow';
 import { keys, useDinnerMutation, usePlan, useRecipes } from '../queries';
-
-/** As many days as the server hands out at once. */
-const MAX_DAYS = 31;
-
-/** Per-browser preferences: how many days to show, and whether planning fills the list. */
-function useStored<T>(key: string, fallback: T): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw === null ? fallback : (JSON.parse(raw) as T);
-    } catch {
-      return fallback;
-    }
-  });
-  return [
-    value,
-    (v: T) => {
-      setValue(v);
-      try {
-        localStorage.setItem(key, JSON.stringify(v));
-      } catch {
-        /* private window: remembered for this visit only */
-      }
-    },
-  ];
-}
 
 /** What a drop target spreads onto its element. */
 interface DropProps {
@@ -45,19 +20,17 @@ const DINNER = 'application/x-grocer-dinner';
 const RECIPE = 'application/x-grocer-recipe';
 
 /**
- * The coming days side by side, to decide what is for dinner on each. A day
+ * The coming days, from tomorrow on, to decide what is for dinner on each. A day
  * holds dinners — a recipe, or just "Takeaway" — and a note for anything else
  * worth knowing ("football, eat early"). Planning a recipe puts its
  * ingredients on the shopping list, as everywhere else.
  */
 export default function PlanPage() {
   const now = today();
-  const [span, setSpan] = useStored('grocer.plan.days', 7);
-  const [fillList, setFillList] = useStored('grocer.plan.fillList', true);
+  const range = usePlanWindow();
+  const [fillList, setFillList] = useFillList();
   const [showRecipes, setShowRecipes] = useStored('grocer.plan.recipes', true);
-  const [offset, setOffset] = useState(0);
-  const from = addDays(now, offset);
-  const plan = usePlan(from, span);
+  const plan = usePlan(range.from, range.count);
   const recipes = useRecipes();
   const [over, setOver] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -78,12 +51,20 @@ export default function PlanPage() {
     };
   }, []);
 
-  /** Drop handlers for a day, or for the "no day yet" tray when `day` is null. */
+  /** The dinner on a day, if any: a day has at most one. */
+  const dinnerOn = (day: string) => plan.data?.days.find((d) => d.day === day)?.dinners[0];
+
+  /**
+   * Drop handlers for a day, or for the "no day yet" tray when `day` is null.
+   * A dinner dropped on a day that has one swaps places with it; a recipe can
+   * only go on a free day.
+   */
   const dropTarget = (day: string | null): DropProps => {
     const key = day ?? 'none';
     return {
       onDragOver: (e: DragEvent) => {
-        if (![DINNER, RECIPE].some((t) => e.dataTransfer.types.includes(t))) return;
+        const types = e.dataTransfer.types;
+        if (!types.includes(DINNER) && !(types.includes(RECIPE) && day && !dinnerOn(day))) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = e.dataTransfer.types.includes(DINNER) ? 'move' : 'copy';
         if (over !== key) setOver(key);
@@ -96,8 +77,16 @@ export default function PlanPage() {
         setOver(null);
         const dinnerId = Number(e.dataTransfer.getData(DINNER));
         const recipeId = Number(e.dataTransfer.getData(RECIPE));
-        if (dinnerId) move.mutate({ id: dinnerId, day });
-        else if (recipeId) add.mutate({ recipeId, day, addToShop: fillList });
+        if (dinnerId) {
+          const all = [...(plan.data?.days.flatMap((d) => d.dinners) ?? []), ...unscheduled];
+          const from = all.find((d) => d.id === dinnerId)?.day ?? null;
+          const there = day ? dinnerOn(day) : undefined;
+          if (from === day) return;
+          move.mutate({ id: dinnerId, day });
+          if (there) move.mutate({ id: there.id, day: from });
+        } else if (recipeId && day && !dinnerOn(day)) {
+          add.mutate({ recipeId, day, addToShop: fillList });
+        }
       },
       'data-over': over === key || undefined,
     };
@@ -113,23 +102,10 @@ export default function PlanPage() {
           Week plan{' '}
           {plan.data && (
             <span className="sub">
-              {planned} of {span} days planned
+              {planned} of {range.count} days planned
             </span>
           )}
         </h1>
-        <div className="row plan-nav">
-          <button className="btn btn--quiet btn--sm btn--icon" onClick={() => setOffset(offset - 1)} aria-label="One day earlier">
-            <span className="flip">
-              <IconChevron />
-            </span>
-          </button>
-          <button className="btn btn--ghost btn--sm" disabled={offset === 0} onClick={() => setOffset(0)}>
-            Today
-          </button>
-          <button className="btn btn--quiet btn--sm btn--icon" onClick={() => setOffset(offset + 1)} aria-label="One day later">
-            <IconChevron />
-          </button>
-        </div>
         <button className="btn btn--ghost btn--sm plan-header__shelf" aria-pressed={showRecipes} onClick={() => setShowRecipes(!showRecipes)}>
           {showRecipes ? 'Hide recipes' : 'Show recipes'}
         </button>
@@ -167,6 +143,20 @@ export default function PlanPage() {
           </datalist>
 
           {plan.data && (
+            <div className="row plan-more plan-more--top">
+              {range.canAddBefore && (
+                <button className="btn btn--ghost btn--sm" onClick={range.addBefore}>
+                  <IconPlus size={16} /> Add a day before
+                </button>
+              )}
+              {range.canRemove && (
+                <button className="btn btn--quiet btn--sm" onClick={range.removeFirst}>
+                  <IconMinus size={16} /> Remove the first day
+                </button>
+              )}
+            </div>
+          )}
+          {plan.data && (
             <div className="plan-days">
               {plan.data.days.map((d) => (
                 <DayColumn
@@ -183,11 +173,11 @@ export default function PlanPage() {
           )}
           {plan.data && (
             <div className="row plan-more">
-              <button className="btn btn--ghost btn--sm" disabled={span >= MAX_DAYS} onClick={() => setSpan(Math.min(MAX_DAYS, span + 1))}>
+              <button className="btn btn--ghost btn--sm" disabled={!range.canAddAfter} onClick={range.addAfter}>
                 <IconPlus size={16} /> Add a day
               </button>
-              {span > 1 && (
-                <button className="btn btn--quiet btn--sm" onClick={() => setSpan(span - 1)}>
+              {range.canRemove && (
+                <button className="btn btn--quiet btn--sm" onClick={range.removeLast}>
                   <IconMinus size={16} /> Remove the last day
                 </button>
               )}
@@ -226,10 +216,8 @@ function DayColumn({
 }) {
   const [text, setText] = useState('');
   const add = useDinnerMutation(api.dinners.add);
-  const past = day.day < now;
 
-  const submit = () => {
-    const value = text.trim();
+  const submit = (value = text.trim()) => {
     if (!value) return;
     const recipe = recipes.find((r) => r.name.toLowerCase() === value.toLowerCase());
     add.mutate(
@@ -242,11 +230,11 @@ function DayColumn({
 
   return (
     <section
-      className={`plan-day${day.day === now ? ' plan-day--today' : ''}${isWeekend(day.day) ? ' plan-day--weekend' : ''}${past ? ' plan-day--past' : ''}`}
+      className={`plan-day${isWeekend(day.day) ? ' plan-day--weekend' : ''}`}
       {...dropProps}
     >
       <h2 className="plan-day__head">
-        <span className="plan-day__weekday">{day.day === now ? 'Today' : weekday(day.day)}</span>
+        <span className="plan-day__weekday">{weekday(day.day)}</span>
         <span className="plan-day__date">{shortDate(day.day)}</span>
       </h2>
 
@@ -257,22 +245,31 @@ function DayColumn({
           ))}
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-        >
-          <input
-            className="input input--sm"
-            list="plan-recipes"
-            placeholder={day.dinners.length ? 'Add another…' : 'What’s for dinner?'}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            aria-label={`Dinner on ${dayLabel(day.day, now)}`}
-            disabled={add.isPending}
-          />
-        </form>
+        {day.dinners.length === 0 && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+          >
+            <input
+              className="input input--sm"
+              list="plan-recipes"
+              placeholder="What’s for dinner?"
+              value={text}
+              onChange={(e) => {
+                const value = e.target.value;
+                setText(value);
+                // Picked from the suggestions rather than typed: plan it straight away.
+                const native = e.nativeEvent as Event & { inputType?: string };
+                const picked = !native.inputType || native.inputType === 'insertReplacementText';
+                if (picked && recipes.some((r) => r.name === value)) submit(value);
+              }}
+              aria-label={`Dinner on ${dayLabel(day.day, now)}`}
+              disabled={add.isPending}
+            />
+          </form>
+        )}
         <ErrorBanner error={add.error} />
       </div>
 
