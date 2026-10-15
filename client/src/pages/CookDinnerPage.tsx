@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { methodSteps } from '../../../shared/method';
 import type { Recipe } from '../../../shared/types';
 import { formatAmount, scaleAmount } from '../../../shared/units';
 import { api } from '../api';
-import { Stepper } from '../components/EntryEditor';
 import { ErrorBanner, IconBack, IconCheck, IconLink, Sheet, Spinner } from '../components/ui';
 import { keys, useDinnerMutation, useRecipe, useRecipes } from '../queries';
 import { useWakeLock } from '../useWakeLock';
@@ -14,10 +13,9 @@ interface Progress {
   tab: 'ingredients' | 'method';
   ingredients: number[];
   steps: number[];
-  servings: number | null;
 }
 
-const EMPTY: Progress = { tab: 'ingredients', ingredients: [], steps: [], servings: null };
+const EMPTY: Progress = { tab: 'ingredients', ingredients: [], steps: [] };
 
 /**
  * What has been ticked off survives the phone locking, a reload, or a glance
@@ -56,13 +54,9 @@ export default function CookDinnerPage() {
 
   const d = dinner.data;
   const r = recipe.data;
-  const servings = progress.servings ?? d?.servings ?? r?.servings ?? 4;
-
-  // Start from the servings the dinner was planned for; after that, the
-  // stepper here is the cook's own and leaves the shopping list alone.
-  useEffect(() => {
-    if (d && progress.servings === null) setProgress({ ...progress, servings: d.servings });
-  }, [d, progress, setProgress]);
+  // Recipes are written for the household. A dinner planned at another size
+  // before servings went away still cooks at the size it was bought for.
+  const servings = d?.servings ?? r?.servings ?? 4;
 
   const toggle = (list: 'ingredients' | 'steps', value: number) => {
     const current = progress[list];
@@ -104,7 +98,6 @@ export default function CookDinnerPage() {
             note={d.note}
             servings={servings}
             progress={progress}
-            onServings={(n) => setProgress({ ...progress, servings: n })}
             onTab={(tab) => setProgress({ ...progress, tab })}
             onToggle={toggle}
           />
@@ -139,7 +132,6 @@ function CookRecipe({
   note,
   servings,
   progress,
-  onServings,
   onTab,
   onToggle,
 }: {
@@ -147,7 +139,6 @@ function CookRecipe({
   note: string;
   servings: number;
   progress: Progress;
-  onServings: (n: number) => void;
   onTab: (tab: Progress['tab']) => void;
   onToggle: (list: 'ingredients' | 'steps', value: number) => void;
 }) {
@@ -161,10 +152,6 @@ function CookRecipe({
   return (
     <div className="stack">
       {note && <p className="cook-note">{note}</p>}
-      <div className="row row--between">
-        <span className="muted">Cooking for</span>
-        <Stepper label="Servings" value={servings} onChange={onServings} />
-      </div>
 
       <div className="segmented segmented--lg" role="tablist">
         <button role="tab" aria-selected={progress.tab === 'ingredients'} className={progress.tab === 'ingredients' ? 'on' : ''} onClick={() => onTab('ingredients')}>

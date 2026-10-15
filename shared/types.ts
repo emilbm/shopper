@@ -117,8 +117,13 @@ export interface ShoppingLine {
   /** Put in the Nemlig basket by Send to Nemlig. */
   inBasket: boolean;
   note: string;
-  /** The sources added up: one amount per kind of unit. */
+  /**
+   * The sources added up: one amount per kind of unit. When corrected by hand,
+   * the correction stands in for the sources it covered.
+   */
   amounts: Amount[];
+  /** Whether the amount was corrected by hand. */
+  edited: boolean;
   sources: LineSource[];
 }
 

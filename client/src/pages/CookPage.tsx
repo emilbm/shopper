@@ -104,9 +104,13 @@ function DinnerCard({ dinner }: { dinner: Dinner }) {
         {dinner.day && <span className="dinner-card__day">{dayLabel(dinner.day)}</span>}
         <span className="dinner-card__title">{dinner.title}</span>
         <span className="dinner-card__meta">
-          {dinner.recipeId ? `${dinner.servings} pers.` : 'No recipe'}
-          {dinner.recipeName && dinner.recipeName !== dinner.title ? ` · ${dinner.recipeName}` : ''}
-          {dinner.note ? ` · ${dinner.note}` : ''}
+          {[
+            !dinner.recipeId && 'No recipe',
+            dinner.recipeName && dinner.recipeName !== dinner.title && dinner.recipeName,
+            dinner.note,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
       </span>
       <span className="chev">

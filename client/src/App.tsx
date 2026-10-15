@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { IconBook, IconCalendar, IconCart, IconList, IconPot, IconTag } from './components/ui';
 import { isTyping } from './keys';
+import { useLiveSync } from './live';
 import { lastMode, rememberMode } from './mode';
 import CookDinnerPage from './pages/CookDinnerPage';
 import CookPage from './pages/CookPage';
@@ -35,6 +36,7 @@ function Home() {
 export default function App() {
   const { pathname } = useLocation();
   const cooking = pathname.startsWith('/cook');
+  useLiveSync();
 
   useEffect(() => {
     if (pathname !== '/') rememberMode(cooking ? 'cook' : 'shop');

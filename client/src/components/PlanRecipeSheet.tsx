@@ -12,20 +12,18 @@ import { ErrorBanner, IconPot, Sheet, Spinner } from './ui';
 export function PlanRecipeSheet({
   recipeId,
   name,
-  servings,
   onClose,
   onPlanned,
 }: {
   recipeId: number;
   name: string;
-  servings: number;
   onClose: () => void;
   onPlanned: (day: string) => void;
 }) {
   const range = usePlanWindow();
   const plan = usePlan(range.from, range.count);
   const [fillList, setFillList] = useFillList();
-  const add = useDinnerMutation((day: string) => api.dinners.add({ recipeId, servings, day, addToShop: fillList }));
+  const add = useDinnerMutation((day: string) => api.dinners.add({ recipeId, day, addToShop: fillList }));
 
   return (
     <Sheet title={`Plan ${name}`} onClose={onClose}>
@@ -58,7 +56,7 @@ export function PlanRecipeSheet({
         )}
         <label className={`checkline${fillList ? ' checkline--on' : ''}`}>
           <input type="checkbox" checked={fillList} onChange={(e) => setFillList(e.target.checked)} />
-          <span>Put its ingredients on the shopping list ({servings} servings)</span>
+          <span>Put its ingredients on the shopping list</span>
         </label>
         <p className="small faint" style={{ margin: 0 }}>
           These are the days in your <Link to="/plan">week plan</Link>. To change a planned day or add more days, go there.

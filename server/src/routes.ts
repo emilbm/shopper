@@ -7,6 +7,7 @@ import { AiError, type Ai } from './ai.js';
 import type { Config } from './config.js';
 import { fetchImage, fetchPage, findImage, IMAGE_TYPES, ImportError, importRecipe } from './importer.js';
 import { applyToBasket, planShop, type Nemlig } from './nemlig.js';
+import type { Events } from './events.js';
 import type { ErrorReporter } from './sentry.js';
 import type { Store } from './store.js';
 
@@ -74,8 +75,12 @@ export interface RouteDeps {
   nemlig: Nemlig;
   reporter: ErrorReporter;
   config: Config;
+  events: Events;
   categoriseNow: () => Promise<number>;
 }
+
+/** Requests that change nothing, though they are not GETs. */
+const READ_ONLY_POSTS = new Set(['/api/recipes/import', '/api/shop/parse', '/api/nemlig/plan', '/api/client-errors']);
 
 export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   const { store, ai, nemlig, reporter, config } = deps;
@@ -97,6 +102,23 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   };
 
   app.get('/api/health', async () => ({ ok: true }));
+
+  /**
+   * Live updates: every successful change is announced to every open browser,
+   * with the id the changing browser sent, so it can skip its own.
+   */
+  app.get('/api/events', (_req, reply) => {
+    reply.hijack();
+    deps.events.subscribe(reply.raw);
+  });
+
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || reply.statusCode >= 400) return;
+    const path = req.url.split('?')[0]!;
+    if (!path.startsWith('/api/') || READ_ONLY_POSTS.has(path)) return;
+    const by = req.headers['x-grocer-client'];
+    deps.events.changed(typeof by === 'string' ? by.slice(0, 64) : undefined);
+  });
 
   app.get('/api/meta', async (): Promise<Meta> => ({
     version: config.version,

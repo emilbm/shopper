@@ -169,6 +169,15 @@ const MIGRATIONS: string[] = [
 
   ALTER TABLE shop_lines ADD COLUMN in_basket INTEGER NOT NULL DEFAULT 0;
   `,
+
+  // 5 — an amount corrected by hand, kept beside the line's sources rather
+  // than replacing them, so the line still knows which recipes put it there.
+  // It stands in for the sources up to edited_upto; later ones add to it.
+  `
+  ALTER TABLE shop_lines ADD COLUMN edited_quantity REAL;
+  ALTER TABLE shop_lines ADD COLUMN edited_unit TEXT;
+  ALTER TABLE shop_lines ADD COLUMN edited_upto INTEGER;
+  `,
 ];
 
 export function openDatabase(path: string): Db {

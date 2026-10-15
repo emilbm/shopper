@@ -78,7 +78,7 @@ export default function RecipesPage() {
                   <span className="recipe-card__body">
                     <span className="list__title">{r.name}</span>
                     <span className="small muted" style={{ display: 'block' }}>
-                      {r.servings} servings · {r.ingredientCount} ingredients
+                      {r.ingredientCount} ingredients
                       {r.tags.length ? ` · ${r.tags.join(', ')}` : ''}
                     </span>
                   </span>

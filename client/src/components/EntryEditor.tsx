@@ -181,25 +181,3 @@ export function entriesForSave(entries: EditableEntry[]) {
     .filter((e) => e.name.trim())
     .map((e) => ({ name: e.name.trim(), quantity: e.quantity, unit: e.unit.trim(), note: e.note.trim() }));
 }
-
-interface StepperProps {
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  label: string;
-}
-
-export function Stepper({ value, onChange, min = 1, max = 99, label }: StepperProps) {
-  return (
-    <div className="stepper" role="group" aria-label={label}>
-      <button type="button" className="btn btn--icon" disabled={value <= min} onClick={() => onChange(value - 1)} aria-label="Fewer">
-        −
-      </button>
-      <span className="stepper__value num">{value}</span>
-      <button type="button" className="btn btn--icon" disabled={value >= max} onClick={() => onChange(value + 1)} aria-label="More">
-        +
-      </button>
-    </div>
-  );
-}

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Recipe, RecipeDraft } from '../../../shared/types';
 import { api, type RecipeInput } from '../api';
-import { blankEntry, EntryEditor, entriesForSave, newKey, Stepper, type EditableEntry } from '../components/EntryEditor';
+import { blankEntry, EntryEditor, entriesForSave, newKey, type EditableEntry } from '../components/EntryEditor';
 import { PictureEditor, useBlobUrl } from '../components/PictureEditor';
 import { ErrorBanner, IconBack, IconTrash, Spinner, useConfirm } from '../components/ui';
 import { useSaveShortcut } from '../keys';
@@ -165,10 +165,6 @@ export default function RecipeEditPage() {
             <div className="field">
               <label htmlFor="r-name">Name</label>
               <input id="r-name" className="input" value={form.name} onChange={(e) => set('name', e.target.value)} />
-            </div>
-            <div className="row row--between">
-              <span className="muted">Servings</span>
-              <Stepper label="Servings" value={form.servings} onChange={(v) => set('servings', v)} />
             </div>
 
             <h2 className="section-title">Picture</h2>

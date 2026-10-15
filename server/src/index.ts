@@ -10,6 +10,7 @@ import { openDatabase } from './db.js';
 import { createNemlig, NemligError } from './nemlig.js';
 import { registerRoutes } from './routes.js';
 import { createErrorReporter } from './sentry.js';
+import { createEvents } from './events.js';
 import { createStore } from './store.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,7 @@ const reporter = createErrorReporter(
 const ai = createAi(config.ai);
 const nemlig = createNemlig(config.nemlig, config.ai.apiKey);
 const db = openDatabase(config.dbPath);
+const events = createEvents();
 
 /**
  * New items are put in aisles in the background, a few seconds after they
@@ -72,7 +74,10 @@ async function categoriseNow(): Promise<number> {
     } finally {
       categorising = null;
     }
-    if (total) app.log.info({ total }, 'categorised items');
+    if (total) {
+      app.log.info({ total }, 'categorised items');
+      events.changed(undefined);
+    }
     return total;
   })();
   return categorising;
@@ -115,7 +120,10 @@ app.setErrorHandler((error: FastifyError | Error, req, reply) => {
   return reply.status(status).send({ error: error.message });
 });
 
-await registerRoutes(app, { store, ai, nemlig, reporter, config, categoriseNow });
+await registerRoutes(app, { store, ai, nemlig, reporter, config, events, categoriseNow });
+
+// Open event streams would otherwise hold the server open on shutdown.
+app.addHook('preClose', async () => events.close());
 
 const clientDir = config.clientDir || resolve(here, '../../../../client/dist');
 if (existsSync(join(clientDir, 'index.html'))) {

@@ -280,7 +280,6 @@ function DayColumn({
 
 function DinnerCard({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: () => void }) {
   const { confirm, dialog } = useConfirm();
-  const update = useDinnerMutation((servings: number) => api.dinners.update(d.id, { servings }));
   const remove = useDinnerMutation(() => api.dinners.remove(d.id));
   const putOn = useDinnerMutation(() => api.shop.addDinner(d.id));
 
@@ -322,15 +321,6 @@ function DinnerCard({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: (
       </div>
       {d.recipeId !== null && !d.cookedAt && (
         <div className="row plan-dinner__meta">
-          <span className="mini-stepper num" title="Servings — the list follows">
-            <button onClick={() => update.mutate(Math.max(1, d.servings - 1))} aria-label="Fewer servings">
-              −
-            </button>
-            {d.servings}
-            <button onClick={() => update.mutate(Math.min(99, d.servings + 1))} aria-label="More servings">
-              +
-            </button>
-          </span>
           {d.onShop ? (
             <span className="tiny faint">on the list</span>
           ) : (
@@ -341,7 +331,7 @@ function DinnerCard({ dinner: d, onDragStart }: { dinner: Dinner; onDragStart: (
         </div>
       )}
       {d.cookedAt && <span className="tiny faint">cooked</span>}
-      <ErrorBanner error={update.error ?? remove.error ?? putOn.error} />
+      <ErrorBanner error={remove.error ?? putOn.error} />
       {dialog}
     </div>
   );

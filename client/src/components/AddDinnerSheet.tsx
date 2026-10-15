@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { api } from '../api';
 import { addDays, dayLabel, today } from '../days';
 import { useDinnerMutation, useRecipes } from '../queries';
-import { Stepper } from './EntryEditor';
 import { ErrorBanner, IconCheck, Sheet, Spinner } from './ui';
 
 /**
@@ -14,7 +13,7 @@ export function AddDinnerSheet({ onClose, defaultAddToShop = true }: { onClose: 
   const recipes = useRecipes();
   const [mode, setMode] = useState<'recipe' | 'other'>('recipe');
   const [filter, setFilter] = useState('');
-  const [chosen, setChosen] = useState<{ id: number; servings: number } | null>(null);
+  const [chosen, setChosen] = useState<number | null>(null);
   const [title, setTitle] = useState('');
   const [addToShop, setAddToShop] = useState(defaultAddToShop);
   const [day, setDay] = useState('');
@@ -27,7 +26,7 @@ export function AddDinnerSheet({ onClose, defaultAddToShop = true }: { onClose: 
   const submit = () =>
     add.mutate(
       mode === 'recipe' && chosen
-        ? { recipeId: chosen.id, servings: chosen.servings, addToShop, day: day || null }
+        ? { recipeId: chosen, addToShop, day: day || null }
         : { title: title.trim(), addToShop: false, day: day || null },
       { onSuccess: onClose },
     );
@@ -56,19 +55,13 @@ export function AddDinnerSheet({ onClose, defaultAddToShop = true }: { onClose: 
                 {shown.map((r) => (
                   <button
                     key={r.id}
-                    className={`list__row${chosen?.id === r.id ? ' list__row--on' : ''}`}
-                    onClick={() => setChosen({ id: r.id, servings: r.servings })}
+                    className={`list__row${chosen === r.id ? ' list__row--on' : ''}`}
+                    onClick={() => setChosen(r.id)}
                   >
                     <span className="grow list__title">{r.name}</span>
-                    {chosen?.id === r.id && <IconCheck />}
+                    {chosen === r.id && <IconCheck />}
                   </button>
                 ))}
-              </div>
-            )}
-            {chosen && (
-              <div className="row row--between">
-                <span className="muted">Servings</span>
-                <Stepper label="Servings" value={chosen.servings} onChange={(servings) => setChosen({ ...chosen, servings })} />
               </div>
             )}
             <label className={`checkline${addToShop ? ' checkline--on' : ''}`}>

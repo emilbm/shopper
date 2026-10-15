@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { categoryLabel } from '../../../shared/categories';
 import type { Dinner, ShopContributor, ShoppingLine } from '../../../shared/types';
-import { formatAmount, formatAmounts, sumAmounts } from '../../../shared/units';
+import { formatAmount, formatAmounts } from '../../../shared/units';
 import { api, type EntryInput } from '../api';
 import { AddDinnerSheet } from '../components/AddDinnerSheet';
 import { EntryDatalists } from '../components/EntryEditor';
@@ -446,7 +446,7 @@ function ListPicker({ onClose }: { onClose: () => void }) {
 
 function LineSheet({ line, onClose }: { line: ShoppingLine; onClose: () => void }) {
   // Edit as one amount; with mixed units, the first is the one offered.
-  const first = sumAmounts(line.sources)[0] ?? { quantity: null, unit: '' };
+  const first = line.amounts[0] ?? { quantity: null, unit: '' };
   const [quantity, setQuantity] = useState<number | null>(first.quantity);
   const [unit, setUnit] = useState(first.unit);
   const [note, setNote] = useState(line.note);
@@ -467,6 +467,12 @@ function LineSheet({ line, onClose }: { line: ShoppingLine; onClose: () => void 
                 <span className="num">{formatAmount({ quantity: s.quantity, unit: s.unit })}</span>
               </div>
             ))}
+            {line.edited && (
+              <div className="row row--between small">
+                <span className="muted">Corrected by hand to</span>
+                <span className="num">{formatAmounts(line.amounts)}</span>
+              </div>
+            )}
           </div>
         )}
         <div className="row">
@@ -481,7 +487,8 @@ function LineSheet({ line, onClose }: { line: ShoppingLine; onClose: () => void 
         </div>
         {amountChanged && line.sources.length > 1 && (
           <p className="small faint" style={{ margin: 0 }}>
-            A new amount replaces what the recipes and lists asked for.
+            The new amount stands in for what the recipes and lists asked for. They stay linked: taking one off
+            the list goes back to adding up the rest.
           </p>
         )}
         <div className="field">
@@ -533,10 +540,8 @@ function ShopPanel({
   const dinners = useDinners();
   const { confirm, dialog } = useConfirm();
   const [filter, setFilter] = useState('');
-  const [servings, setServings] = useState<Record<number, number>>({});
   const [other, setOther] = useState('');
   const plan = useDinnerMutation(api.dinners.add);
-  const update = useDinnerMutation((a: { id: number; servings: number }) => api.dinners.update(a.id, { servings: a.servings }));
   const removeDinner = useDinnerMutation((id: number) => api.dinners.remove(id));
   const addList = useShopMutation(api.shop.addList);
   const putOn = useShopMutation(api.shop.addDinner);
@@ -598,17 +603,6 @@ function ShopPanel({
                 </button>
               )}
             </span>
-            {d.recipeId !== null && (
-              <span className="mini-stepper num" title="Servings — the list follows">
-                <button onClick={() => update.mutate({ id: d.id, servings: Math.max(1, d.servings - 1) })} aria-label="Fewer servings">
-                  −
-                </button>
-                {d.servings}
-                <button onClick={() => update.mutate({ id: d.id, servings: Math.min(99, d.servings + 1) })} aria-label="More servings">
-                  +
-                </button>
-              </span>
-            )}
             <button className="btn btn--quiet btn--sm btn--icon" onClick={() => void remove(d)} title={`Remove ${d.title}`}>
               <IconClose size={16} />
             </button>
@@ -637,7 +631,7 @@ function ShopPanel({
             {cookedCount} cooked — clear them from the Cook view.
           </p>
         )}
-        <ErrorBanner error={plan.error ?? update.error ?? removeDinner.error ?? putOn.error} />
+        <ErrorBanner error={plan.error ?? removeDinner.error ?? putOn.error} />
       </section>
 
       {others.length > 0 && (
@@ -668,34 +662,22 @@ function ShopPanel({
         )}
         {recipes.data?.length === 0 && <p className="small muted">No recipes yet.</p>}
         <div className="panel__scroll">
-          {shown.map((r) => {
-            const n = servings[r.id] ?? r.servings;
-            return (
+          {shown.map((r) => (
               <div key={r.id} className="panel__row">
                 <Link to={`/recipes/${r.id}`} className="grow truncate panel__link">
                   {r.name}
                   {plannedRecipe(r.id) && <span className="tiny faint"> · planned</span>}
                 </Link>
-                <span className="mini-stepper num" title="Servings">
-                  <button onClick={() => setServings({ ...servings, [r.id]: Math.max(1, n - 1) })} aria-label="Fewer servings">
-                    −
-                  </button>
-                  {n}
-                  <button onClick={() => setServings({ ...servings, [r.id]: Math.min(99, n + 1) })} aria-label="More servings">
-                    +
-                  </button>
-                </span>
                 <button
                   className="btn btn--sm"
                   disabled={plan.isPending}
-                  onClick={() => plan.mutate({ recipeId: r.id, servings: n })}
-                  title={`Plan ${r.name} for ${n} this week, and put its ingredients on the list`}
+                  onClick={() => plan.mutate({ recipeId: r.id })}
+                  title={`Plan ${r.name} this week, and put its ingredients on the list`}
                 >
                   Plan
                 </button>
               </div>
-            );
-          })}
+          ))}
         </div>
       </section>
 

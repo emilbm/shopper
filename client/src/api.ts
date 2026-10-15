@@ -13,6 +13,7 @@ import type {
   StapleList,
   WeekPlan,
 } from '../../shared/types';
+import { CLIENT_ID } from './live';
 
 /**
  * Requests are same-origin, so the app works unchanged on a LAN address or
@@ -37,7 +38,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     res = await fetch(BASE + path, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': raw ? body.type : 'application/json' },
+      // The id lets other tabs' live updates say who made a change.
+      headers: {
+        'x-grocer-client': CLIENT_ID,
+        ...(body === undefined ? {} : { 'content-type': raw ? body.type : 'application/json' }),
+      },
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     });
   } catch {

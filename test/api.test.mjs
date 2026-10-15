@@ -333,10 +333,22 @@ test('the shopping list merges recipes and lists, and unmerges them', async () =
   assert.equal(line('Mælk').checked, false);
   assert.deepEqual(line('Mælk').amounts, [{ quantity: 1.5, unit: 'l' }]);
 
-  // A hand-corrected amount replaces the sources.
+  // A hand-corrected amount stands in for the sources, which stay: the line
+  // still belongs to the lasagne.
+  const sourcesBefore = line('Mælk').sources.map((s) => s.label);
   ({ body: shop } = await call('PATCH', `/shop/lines/${line('Mælk').id}`, { amount: { quantity: 2, unit: 'l' }, note: 'Øko' }));
   assert.deepEqual(line('Mælk').amounts, [{ quantity: 2, unit: 'l' }]);
+  assert.equal(line('Mælk').edited, true);
   assert.equal(line('Mælk').note, 'Øko');
+  assert.deepEqual(line('Mælk').sources.map((s) => s.label), sourcesBefore);
+  assert.ok(shop.contributors.some((c) => c.kind === 'recipe' && c.refId === lasagne.id));
+
+  // Taking the lasagne off undoes a correction that counted it.
+  ({ body: shop } = await call('DELETE', `/shop/recipes/${lasagne.id}`));
+  assert.equal(line('Mælk').edited, false);
+  assert.deepEqual(line('Mælk').amounts, [{ quantity: 1, unit: 'l' }]);
+  ({ body: shop } = await call('POST', '/shop/recipes', { recipeId: lasagne.id }));
+  ({ body: shop } = await call('PATCH', `/shop/lines/${line('Mælk').id}`, { amount: { quantity: 2, unit: 'l' } }));
 
   ({ body: shop } = await call('PATCH', `/shop/lines/${line('Havregryn').id}`, { checked: true }));
   ({ body: shop } = await call('POST', '/shop/clear', { onlyChecked: true }));
@@ -413,8 +425,10 @@ test('items merge, and refuse deletion while in use', async () => {
   assert.equal(merged.status, 200);
   const { body: shop } = await call('GET', '/shop');
   assert.equal(shop.lines.filter((l) => /mælk/i.test(l.name)).length, 1);
-  // 2 l hand-corrected + 1 l from the AI's taco list + the 1 l of Minimælk.
-  assert.deepEqual(shop.lines.find((l) => l.name === 'Mælk').amounts, [{ quantity: 4, unit: 'l' }]);
+  // Merging drops the hand correction: the lasagne's 1,5 l + 1 l from the AI's
+  // taco list + the 1 l of Minimælk.
+  assert.deepEqual(shop.lines.find((l) => l.name === 'Mælk').amounts, [{ quantity: 3.5, unit: 'l' }]);
+  assert.equal(shop.lines.find((l) => l.name === 'Mælk').edited, false);
   assert.ok(dupe.status === 200);
 
   const rename = await call('PUT', `/items/${milk.id}`, { name: 'havregryn', category: 'dairy' });
@@ -760,4 +774,43 @@ test('week plan: dinners on days, notes, and moving between days', async () => {
 
   assert.equal((await call('GET', '/plan?from=3/3/2031&days=3')).status, 400);
   assert.equal((await call('PATCH', `/dinners/${loose.id}`, { day: 'tomorrow' })).status, 400);
+});
+
+test('live updates: every change is announced, with who made it; reads are not', async () => {
+  const controller = new AbortController();
+  const res = await fetch(`${base}/events`, { signal: controller.signal });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^text\/event-stream/);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const nextEvent = async () => {
+    for (;;) {
+      const match = /data: (.*)\n\n/.exec(buffer);
+      if (match) {
+        buffer = buffer.slice(match.index + match[0].length);
+        return JSON.parse(match[1]);
+      }
+      const { value, done } = await reader.read();
+      if (done) throw new Error('stream ended');
+      buffer += decoder.decode(value, { stream: true });
+    }
+  };
+
+  // A read and a parse change nothing, so say nothing; a change does.
+  await call('GET', '/shop');
+  await call('POST', '/shop/parse', { text: 'smør', useAi: false });
+  await fetch(`${base}/shop/items`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-grocer-client': 'tab-a' },
+    body: JSON.stringify({ entries: [{ name: 'Gær', quantity: null, unit: '', note: '' }] }),
+  });
+  assert.deepEqual(await nextEvent(), { type: 'changed', by: 'tab-a' });
+
+  // A refused change says nothing either.
+  await call('POST', '/shop/items', { entries: [] });
+  await call('PUT', '/plan/2031-01-01/note', { note: 'Fest' });
+  assert.deepEqual(await nextEvent(), { type: 'changed', by: null });
+
+  controller.abort();
 });

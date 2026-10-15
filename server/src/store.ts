@@ -194,6 +194,12 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
         const from = db.get<{ id: number }>('SELECT id FROM shop_lines WHERE item_id = ?', id);
         const into = db.get<{ id: number }>('SELECT id FROM shop_lines WHERE item_id = ?', intoId);
         if (from && into) {
+          // The two lines' sources now add up together; a corrected amount on
+          // either no longer describes the merged line.
+          db.run(
+            'UPDATE shop_lines SET edited_quantity = NULL, edited_unit = NULL, edited_upto = NULL WHERE id = ?',
+            into.id,
+          );
           db.run('UPDATE shop_sources SET line_id = ? WHERE line_id = ?', into.id, from.id);
           db.run('DELETE FROM shop_lines WHERE id = ?', from.id);
         } else if (from) {
@@ -557,8 +563,12 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
         checked: number;
         in_basket: number;
         note: string;
+        edited_quantity: number | null;
+        edited_unit: string | null;
+        edited_upto: number | null;
       }>(
-        `SELECT l.id, l.item_id, i.name, i.category, l.checked, l.in_basket, l.note
+        `SELECT l.id, l.item_id, i.name, i.category, l.checked, l.in_basket, l.note,
+                l.edited_quantity, l.edited_unit, l.edited_upto
            FROM shop_lines l JOIN items i ON i.id = l.item_id`,
       );
       const sources = db.all<{
@@ -581,6 +591,10 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
       const lines = rows
         .map<ShoppingLine>((r) => {
           const lineSources = byLine.get(r.id) ?? [];
+          // A hand-corrected amount stands in for the sources it covered;
+          // anything asked for since is added to it.
+          const edited = r.edited_upto !== null ? { quantity: r.edited_quantity, unit: r.edited_unit ?? '' } : null;
+          const counted = edited ? [edited, ...lineSources.filter((s) => s.id > r.edited_upto!)] : lineSources;
           return {
             id: r.id,
             itemId: r.item_id,
@@ -589,7 +603,8 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
             checked: r.checked === 1,
             inBasket: r.in_basket === 1,
             note: r.note,
-            amounts: sumAmounts(lineSources),
+            amounts: sumAmounts(counted),
+            edited: edited !== null,
             sources: lineSources,
           };
         })
@@ -665,6 +680,15 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
     /** Take a recipe or list back off: its amounts go, and lines only it wanted go too. */
     removeContributor(kind: ShopContributor['kind'], refId: number): ShoppingList {
       db.tx(() => {
+        // A corrected amount that counted this contributor no longer holds:
+        // those lines go back to adding up what is left.
+        db.run(
+          `UPDATE shop_lines SET edited_quantity = NULL, edited_unit = NULL, edited_upto = NULL
+            WHERE id IN (SELECT s.line_id FROM shop_sources s
+                          WHERE s.kind = ? AND s.ref_id = ? AND s.id <= shop_lines.edited_upto)`,
+          kind,
+          refId,
+        );
         db.run('DELETE FROM shop_sources WHERE kind = ? AND ref_id = ?', kind, refId);
         dropEmptyLines();
       });
@@ -690,8 +714,9 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
     },
 
     /**
-     * Correct a line by hand. A new amount replaces whatever the sources added
-     * up to — the person standing at the shelf knows better.
+     * Correct a line by hand. A new amount stands in for whatever the sources
+     * added up to — the person standing at the shelf knows better — but the
+     * sources stay, so the line still belongs to its recipes and dinners.
      */
     updateLine(lineId: number, input: { note?: string; amount?: { quantity: number | null; unit: string } }) {
       db.tx(() => {
@@ -699,12 +724,13 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
         if (!line) throw new NotFoundError('No such line');
         if (input.note !== undefined) db.run('UPDATE shop_lines SET note = ? WHERE id = ?', input.note, lineId);
         if (input.amount) {
-          db.run('DELETE FROM shop_sources WHERE line_id = ?', lineId);
+          const upto = db.get<{ upto: number }>('SELECT COALESCE(MAX(id), 0) AS upto FROM shop_sources WHERE line_id = ?', lineId)!.upto;
           db.run(
-            "INSERT INTO shop_sources (line_id, kind, ref_id, label, quantity, unit) VALUES (?, 'manual', NULL, 'Edited', ?, ?)",
-            lineId,
+            'UPDATE shop_lines SET edited_quantity = ?, edited_unit = ?, edited_upto = ? WHERE id = ?',
             input.amount.quantity,
             normaliseUnit(input.amount.unit),
+            upto,
+            lineId,
           );
         }
       });

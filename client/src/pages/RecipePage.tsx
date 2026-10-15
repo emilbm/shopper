@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { formatAmount, scaleAmount } from '../../../shared/units';
-import { Stepper } from '../components/EntryEditor';
+import { formatAmount } from '../../../shared/units';
 import { PlanRecipeSheet } from '../components/PlanRecipeSheet';
 import { ErrorBanner, IconBack, IconEdit, IconLink, IconPot, Spinner } from '../components/ui';
 import { dayLabel } from '../days';
@@ -12,16 +11,9 @@ export default function RecipePage() {
   const navigate = useNavigate();
   const recipe = useRecipe(id);
   const dinners = useDinners();
-  const [servings, setServings] = useState<number | null>(null);
   const [choosingDay, setChoosingDay] = useState(false);
 
-  useEffect(() => {
-    if (recipe.data && servings === null) setServings(recipe.data.servings);
-  }, [recipe.data, servings]);
-
   const r = recipe.data;
-  const want = servings ?? r?.servings ?? 1;
-  const factor = r && r.servings > 0 ? want / r.servings : 1;
   const planned = dinners.data?.filter((d) => d.recipeId === id && !d.cookedAt) ?? [];
 
   return (
@@ -66,10 +58,6 @@ export default function RecipePage() {
             )}
 
             <div className="card stack">
-              <div className="row row--between">
-                <span className="muted">Servings</span>
-                <Stepper label="Servings" value={want} onChange={setServings} />
-              </div>
               <button className="btn btn--primary btn--block btn--lg" onClick={() => setChoosingDay(true)}>
                 <IconPot size={20} /> {planned.length ? 'Plan it on another day…' : 'Plan it on a day…'}
               </button>
@@ -85,7 +73,7 @@ export default function RecipePage() {
             <h2 className="section-title">Ingredients</h2>
             <ul className="ingredients card">
               {r.ingredients.map((ing) => {
-                const amount = formatAmount(scaleAmount({ quantity: ing.quantity, unit: ing.unit }, factor));
+                const amount = formatAmount({ quantity: ing.quantity, unit: ing.unit });
                 return (
                   <li key={ing.id}>
                     <span className="ingredients__amount num">{amount}</span>
@@ -123,7 +111,6 @@ export default function RecipePage() {
         <PlanRecipeSheet
           recipeId={r.id}
           name={r.name}
-          servings={want}
           onClose={() => setChoosingDay(false)}
           onPlanned={() => setChoosingDay(false)}
         />
