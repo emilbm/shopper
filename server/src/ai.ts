@@ -152,8 +152,12 @@ export function createAi(cfg: Config['ai']) {
       });
     } catch (err) {
       const timedOut = (err as Error).name === 'TimeoutError';
+      // "fetch failed" says nothing; the cause's code (ENOTFOUND, ECONNREFUSED)
+      // and host say whether it is the name, the port or the harness itself.
+      const cause = (err as { cause?: { code?: string; hostname?: string; address?: string } }).cause;
+      const why = cause?.code ? ` (${[cause.code, cause.hostname ?? cause.address].filter(Boolean).join(' ')})` : '';
       throw new AiError(
-        timedOut ? 'The AI service took too long to answer' : 'Could not reach the AI service',
+        timedOut ? 'The AI service took too long to answer' : `Could not reach the AI service at ${new URL(cfg.baseUrl).host}${why}`,
         timedOut ? 504 : 502,
         { cause: err },
       );

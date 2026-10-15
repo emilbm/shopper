@@ -100,7 +100,9 @@ export function createNemlig(cfg: Config['nemlig'], apiKey: string) {
     try {
       await client.connect(transport, { timeout: cfg.timeoutMs });
     } catch (err) {
-      throw new NemligError(`Could not reach Nemlig through the AI harness: ${(err as Error).message}`, 502, {
+      const cause = (err as { cause?: { code?: string } }).cause;
+      const why = [(err as Error).message, cause?.code].filter(Boolean).join(' — ');
+      throw new NemligError(`Could not reach Nemlig through the AI harness at ${new URL(cfg.mcpUrl).host}: ${why}`, 502, {
         cause: err,
       });
     }
