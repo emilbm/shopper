@@ -1,7 +1,8 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { CATEGORY_KEYS } from '../../shared/categories.js';
-import type { Meta } from '../../shared/types.js';
+import type { Meta, NemligProgress } from '../../shared/types.js';
 import { parseIngredientLine, splitItems } from '../../shared/units.js';
 import { AiError, type Ai } from './ai.js';
 import type { Config } from './config.js';
@@ -419,12 +420,49 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
     return { ok: true, server: nemlig.server };
   });
 
+  /**
+   * Work that takes a while, answered either all at once as JSON or — when
+   * the browser asks for application/x-ndjson — as a stream of progress
+   * lines followed by the result, one JSON object per line:
+   * {"type":"progress","progress":{...}}, then {"type":"done","result":...} or
+   * {"type":"error","error":"..."}.
+   */
+  const withProgress = async <T>(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    work: (onProgress?: (progress: NemligProgress) => void) => Promise<T>,
+  ) => {
+    if (!(req.headers.accept ?? '').includes('application/x-ndjson')) return work();
+    const out = new PassThrough();
+    const send = (event: unknown) => out.write(`${JSON.stringify(event)}\n`);
+    work((progress) => send({ type: 'progress', progress })).then(
+      (result) => {
+        send({ type: 'done', result });
+        out.end();
+      },
+      (err: unknown) => {
+        // The status line has gone already, so the error travels in the stream.
+        const status = (err as { statusCode?: number }).statusCode ?? 500;
+        if (status >= 500) reporter.capture(err, { level: 'warning', tags: { feature: 'nemlig' } });
+        send({ type: 'error', error: status === 500 ? 'Something went wrong on the server' : (err as Error).message });
+        out.end();
+      },
+    );
+    return reply
+      .type('application/x-ndjson; charset=utf-8')
+      .header('cache-control', 'no-cache, no-transform')
+      .header('x-accel-buffering', 'no')
+      .send(out);
+  };
+
   /** Proposals for review: nothing is put in the basket here. */
-  app.post('/api/nemlig/plan', async () =>
-    planShop({ store, ai, nemlig, onAiFailure: (err) => reportAi(err) }),
+  app.post('/api/nemlig/plan', async (req, reply) =>
+    withProgress(req, reply, (onProgress) =>
+      planShop({ store, ai, nemlig, onAiFailure: (err) => reportAi(err), onProgress }),
+    ),
   );
 
-  app.post('/api/nemlig/apply', async (req) => {
+  app.post('/api/nemlig/apply', async (req, reply) => {
     const { entries } = z
       .object({
         entries: z
@@ -442,7 +480,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
           .max(200),
       })
       .parse(req.body);
-    return applyToBasket(entries, { store, nemlig });
+    return withProgress(req, reply, (onProgress) => applyToBasket(entries, { store, nemlig, onProgress }));
   });
 
   /** Forget what an item was bought as, so the next shop searches for it afresh. */

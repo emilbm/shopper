@@ -233,6 +233,17 @@ export interface NemligPlanLine {
   alternatives: NemligProduct[];
 }
 
+/**
+ * How far Send to Nemlig has got, streamed while it works: every line
+ * searched, the model choosing, and every product going into the basket.
+ */
+export type NemligProgress =
+  | { type: 'searching'; total: number; names: string[] }
+  | { type: 'searched'; name: string; found: number; done: number; total: number }
+  | { type: 'choosing'; count: number }
+  | { type: 'filling'; total: number; names: string[] }
+  | { type: 'filled'; name: string; ok: boolean; done: number; total: number };
+
 export interface NemligPlan {
   lines: NemligPlanLine[];
   /** Set when the model could not help and the proposals are plain guesses. */

@@ -3,6 +3,7 @@ import type {
   NemligApplyEntry,
   NemligApplyResult,
   NemligPlan,
+  NemligProgress,
   IngredientInput,
   Item,
   Meta,
@@ -29,6 +30,55 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+/**
+ * A POST whose answer streams in as lines of JSON: progress while the server
+ * works, then the result. Errors before the stream starts (a bad request)
+ * come back as ordinary JSON errors.
+ */
+async function streamed<T>(path: string, body: unknown, onProgress: (progress: NemligProgress) => void): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, {
+      method: 'POST',
+      headers: { 'x-grocer-client': CLIENT_ID, 'content-type': 'application/json', accept: 'application/x-ndjson' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, 'Cannot reach the server');
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    let message = `Request failed (${res.status})`;
+    try {
+      message = (JSON.parse(text) as { error?: string }).error ?? message;
+    } catch {
+      /* keep the status */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buffer += value;
+    let newline: number;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      const event = JSON.parse(line) as
+        | { type: 'progress'; progress: NemligProgress }
+        | { type: 'done'; result: T }
+        | { type: 'error'; error: string };
+      if (event.type === 'progress') onProgress(event.progress);
+      else if (event.type === 'done') return event.result;
+      else throw new ApiError(502, event.error);
+    }
+    if (done) throw new ApiError(502, 'The server stopped before it finished');
   }
 }
 
@@ -169,8 +219,11 @@ export const api = {
   },
 
   nemlig: {
-    plan: () => request<NemligPlan>('POST', '/nemlig/plan', {}),
-    apply: (entries: NemligApplyEntry[]) => request<NemligApplyResult>('POST', '/nemlig/apply', { entries }),
+    /** Proposals for every line, with progress as each line is searched. */
+    plan: (onProgress: (progress: NemligProgress) => void) => streamed<NemligPlan>('/nemlig/plan', {}, onProgress),
+    /** Fill the basket, with progress as each product goes in. */
+    apply: (entries: NemligApplyEntry[], onProgress: (progress: NemligProgress) => void) =>
+      streamed<NemligApplyResult>('/nemlig/apply', { entries }, onProgress),
   },
 
   dinners: {

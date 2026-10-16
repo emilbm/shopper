@@ -874,3 +874,53 @@ test('live updates: every change is announced, with who made it; reads are not',
 
   controller.abort();
 });
+
+test('nemlig: plan and fill can stream their progress, line by line', async () => {
+  await call('POST', '/shop/clear', { onlyChecked: false });
+  await call('POST', '/shop/items', {
+    entries: ['Hvedemel', 'Mælk', 'Safran'].map((name) => ({ name, quantity: null, unit: '', note: '' })),
+  });
+  const stream = async (path, body) => {
+    const res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
+      body: JSON.stringify(body),
+    });
+    assert.match(res.headers.get('content-type'), /^application\/x-ndjson/);
+    return (await res.text()).trim().split('\n').map((line) => JSON.parse(line));
+  };
+
+  const planned = await stream('/nemlig/plan', {});
+  const progress = planned.filter((e) => e.type === 'progress').map((e) => e.progress);
+  // In the list's own order, which is by aisle.
+  assert.equal(progress[0].type, 'searching');
+  assert.deepEqual([...progress[0].names].sort(), ['Hvedemel', 'Mælk', 'Safran']);
+  const searched = progress.filter((p) => p.type === 'searched');
+  assert.deepEqual(searched.map((p) => p.done), [1, 2, 3]);
+  assert.equal(searched.find((p) => p.name === 'Safran').found, 0);
+  // Nothing was remembered for these, so the model chose.
+  assert.ok(progress.some((p) => p.type === 'choosing'));
+  const done = planned.at(-1);
+  assert.equal(done.type, 'done');
+  assert.equal(done.result.lines.length, 3);
+
+  const flour = done.result.lines.find((l) => l.name === 'Hvedemel');
+  const filled = await stream('/nemlig/apply', {
+    entries: [{ lineId: flour.lineId, itemId: flour.itemId, productId: flour.product.id, productName: flour.product.name, quantity: 1 }],
+  });
+  assert.deepEqual(
+    filled.filter((e) => e.type === 'progress').map((e) => e.progress),
+    [
+      { type: 'filling', total: 1, names: [flour.product.name] },
+      { type: 'filled', name: flour.product.name, ok: true, done: 1, total: 1 },
+    ],
+  );
+  assert.equal(filled.at(-1).type, 'done');
+  assert.ok(filled.at(-1).result.results[0].ok);
+
+  // A failure after the stream has started arrives in it, not as a status.
+  const failed = await stream('/nemlig/apply', {
+    entries: [{ lineId: 999999, itemId: 999999, productId: 'boom', productName: 'Boom', quantity: 1 }],
+  });
+  assert.ok(['done', 'error'].includes(failed.at(-1).type));
+});

@@ -6,6 +6,7 @@ import type {
   NemligPlan,
   NemligPlanLine,
   NemligProduct,
+  NemligProgress,
   ShoppingLine,
 } from '../../shared/types.js';
 import { formatAmounts, normaliseUnit, packsNeeded, parsePackSize, type Amount } from '../../shared/units.js';
@@ -200,6 +201,8 @@ export interface PlanDeps {
   nemlig: Nemlig;
   /** Told about a model failure the plan recovered from. */
   onAiFailure?: (err: unknown) => void;
+  /** Told how far the work has got, for a progress bar. */
+  onProgress?: (progress: NemligProgress) => void;
 }
 
 /**
@@ -214,10 +217,15 @@ export async function planShop(deps: PlanDeps): Promise<NemligPlan> {
   const items = new Map(deps.store.items.list().map((i) => [i.id, i]));
 
   return deps.nemlig.withSession(async (session) => {
+    const progress = deps.onProgress ?? (() => {});
+    progress({ type: 'searching', total: lines.length, names: lines.map((l) => l.name) });
     const favouriteIds = new Set((await session.favourites().catch(() => [])).map((p) => String(p.id)));
-    const searched = await mapLimited(lines, 4, async (line) =>
-      rank((await session.search(line.name).catch(() => [])).map((p) => toProduct(p, favouriteIds))),
-    );
+    let searchedCount = 0;
+    const searched = await mapLimited(lines, 4, async (line) => {
+      const found = rank((await session.search(line.name).catch(() => [])).map((p) => toProduct(p, favouriteIds)));
+      progress({ type: 'searched', name: line.name, found: found.length, done: ++searchedCount, total: lines.length });
+      return found;
+    });
 
     const plan: NemligPlanLine[] = lines.map((line, i) => {
       const candidates = searched[i]!;
@@ -267,6 +275,7 @@ export async function planShop(deps: PlanDeps): Promise<NemligPlan> {
           ...(c.offer ? { offer: c.offer.description } : {}),
         })),
       }));
+      deps.onProgress?.({ type: 'choosing', count: requests.length });
       try {
         picks = await deps.ai.pickProducts(requests);
       } catch (err) {
@@ -313,7 +322,7 @@ export async function planShop(deps: PlanDeps): Promise<NemligPlan> {
  */
 export async function applyToBasket(
   entries: NemligApplyEntry[],
-  deps: { store: Store; nemlig: Nemlig },
+  deps: { store: Store; nemlig: Nemlig; onProgress?: (progress: NemligProgress) => void },
 ): Promise<NemligApplyResult> {
   const wanted = new Map<string, { name: string; quantity: number; entries: NemligApplyEntry[] }>();
   for (const e of entries) {
@@ -331,14 +340,19 @@ export async function applyToBasket(
     }
 
     const results: NemligApplyResult['results'] = [];
+    const progress = deps.onProgress ?? (() => {});
+    const total = wanted.size;
+    progress({ type: 'filling', total, names: [...wanted.values()].map((w) => w.name) });
     for (const [productId, w] of wanted) {
       const previous = before.get(productId) ?? 0;
       const target = Math.max(previous, w.quantity);
       try {
         if (target !== previous) await session.setQuantity(productId, target);
         results.push({ productId, name: w.name, quantity: target, previous, ok: true });
+        progress({ type: 'filled', name: w.name, ok: true, done: results.length, total });
       } catch (err) {
         results.push({ productId, name: w.name, quantity: previous, previous, ok: false, error: (err as Error).message });
+        progress({ type: 'filled', name: w.name, ok: false, done: results.length, total });
         continue;
       }
       for (const e of w.entries) {

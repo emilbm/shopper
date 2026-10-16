@@ -1296,3 +1296,252 @@ kbd {
 .plan-earlier .section-title {
   margin-top: 0;
 }
+
+/* -------------------------------------------- Nemlig products and progress */
+
+.product-thumb {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  /* Nemlig's pictures are on white; a white tile keeps them from floating. */
+  background: #fff;
+  color: #8a9387;
+}
+
+.product-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.product-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-align: left;
+}
+
+.product-line__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.product-line__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-line__meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-line__offer {
+  color: var(--warn-text);
+}
+
+.product-line__out {
+  color: var(--danger-text);
+}
+
+.picker-pop {
+  position: relative;
+}
+
+.picker-pop__current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 10px 5px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.picker-pop__current:hover,
+.picker-pop__current[aria-expanded='true'] {
+  border-color: var(--accent-dim);
+}
+
+.picker-pop__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--faint);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.picker-pop__chev {
+  display: inline-flex;
+  transform: rotate(90deg);
+}
+
+.picker-pop__menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.picker-pop__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 5px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.picker-pop__option:hover {
+  background: var(--surface-2);
+}
+
+.picker-pop__option--on {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.picker-pop__option > svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.nemlig-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  margin: 8px auto;
+}
+
+.nemlig-progress__headline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.progress {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-3);
+}
+
+.progress__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+/* Connecting, with nothing to count yet: a short bar sliding across. */
+.progress--waiting .progress__fill {
+  width: 35% !important;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+/* One long step (the AI choosing): a full bar with a moving sheen, so it
+   reads as working rather than stuck at the end. */
+.progress--sheen .progress__fill {
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent), var(--accent-dim));
+  background-size: 200% 100%;
+  animation: progress-sheen 1.4s linear infinite;
+}
+
+@keyframes progress-sheen {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes progress-slide {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress__fill {
+    transition: none;
+    animation: none !important;
+  }
+}
+
+.nemlig-progress__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 2px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nemlig-progress__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  font-size: 0.88rem;
+  color: var(--faint);
+}
+
+.nemlig-progress__item--done {
+  color: var(--text);
+}
+
+.nemlig-progress__item--failed {
+  color: var(--danger-text);
+}
+
+.nemlig-progress__mark {
+  flex: none;
+  display: inline-flex;
+  justify-content: center;
+  width: 16px;
+}
+
+.nemlig-progress__item--done .nemlig-progress__mark {
+  color: var(--accent-text);
+}
+
+.nemlig-progress__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}

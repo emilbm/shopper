@@ -3,7 +3,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { NemligApplyResult, NemligPlan, NemligPlanLine, NemligProduct } from '../../../shared/types';
 import { api } from '../api';
-import { ErrorBanner, IconBack, IconCheck, IconClose, Spinner } from '../components/ui';
+import {
+  ProductPicker,
+  ProductThumb,
+  ProgressPanel,
+  progressReduce,
+  progressStart,
+  type ProgressState,
+} from '../components/NemligParts';
+import { ErrorBanner, IconBack, IconCheck, IconClose } from '../components/ui';
 import { keys } from '../queries';
 
 const kr = new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'DKK' });
@@ -39,18 +47,6 @@ function toRows(plan: NemligPlan): Row[] {
   });
 }
 
-function optionLabel(p: NemligProduct): string {
-  return [
-    p.favourite ? '★ ' + p.name : p.name,
-    p.description,
-    p.price ? kr.format(p.price) : null,
-    p.offer?.description,
-    p.inStock ? null : 'out of stock',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
 /**
  * The shopping list, turned into a Nemlig basket. Grocer proposes a product
  * and a number of packs for every line still to get; this page is where they
@@ -65,12 +61,15 @@ export default function NemligPage() {
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<NemligApplyResult | null>(null);
+  const [progress, setProgress] = useState<ProgressState>(progressStart);
+  const onProgress = (event: Parameters<typeof progressReduce>[1]) => setProgress((st) => progressReduce(st, event));
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setProgress(progressStart);
     try {
-      const p = await api.nemlig.plan();
+      const p = await api.nemlig.plan(onProgress);
       setPlan(p);
       setRows(toRows(p));
     } catch (err) {
@@ -96,6 +95,7 @@ export default function NemligPage() {
   const apply = async () => {
     setApplying(true);
     setError(null);
+    setProgress(progressStart);
     try {
       const res = await api.nemlig.apply(
         chosen.map((r) => {
@@ -109,6 +109,7 @@ export default function NemligPage() {
             quantity: r.quantity,
           };
         }),
+        onProgress,
       );
       setResult(res);
       await Promise.all([
@@ -141,16 +142,11 @@ export default function NemligPage() {
       <main className="main main--nemlig">
         <ErrorBanner error={error} />
 
-        {loading && (
-          <div className="empty">
-            <Spinner />
-            <p>Searching Nemlig for every line on the list. A long list takes a little while.</p>
-          </div>
-        )}
+        {(loading || applying) && <ProgressPanel state={progress} />}
 
         {result && <ResultView result={result} onDone={() => navigate('/shop')} />}
 
-        {!loading && !result && plan && (
+        {!loading && !applying && !result && plan && (
           <>
             {plan.warning && <div className="banner banner--warn">{plan.warning}</div>}
             {rows.length === 0 && (
@@ -176,19 +172,14 @@ export default function NemligPage() {
                   </label>
 
                   {r.options.length ? (
-                    <select
-                      className="select nemlig-row__product"
-                      value={r.productId ?? ''}
-                      onChange={(e) => update(r.line.lineId, { productId: e.target.value || null, include: !!e.target.value })}
-                      aria-label={`Product for ${r.line.name}`}
-                    >
-                      {!r.line.product && <option value="">— pick one —</option>}
-                      {r.options.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {optionLabel(o)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="nemlig-row__product">
+                      <ProductPicker
+                        options={r.options}
+                        value={r.productId}
+                        onChange={(id) => update(r.line.lineId, { productId: id, include: true })}
+                        label={`Product for ${r.line.name}`}
+                      />
+                    </div>
                   ) : (
                     <span className="small muted nemlig-row__product">Nothing found at Nemlig</span>
                   )}
@@ -213,7 +204,7 @@ export default function NemligPage() {
         )}
       </main>
 
-      {!loading && !result && rows.length > 0 && (
+      {!loading && !applying && !result && rows.length > 0 && (
         <footer className="nemligbar">
           <span className="small muted">
             {chosen.length} products · about <strong className="num">{kr.format(estimate)}</strong>
@@ -241,6 +232,7 @@ function ResultView({ result, onDone }: { result: NemligApplyResult; onDone: () 
         {result.results.map((r) => (
           <div key={r.productId} className="list__row list__row--compact">
             <span className={`tick${r.ok ? ' tick--done' : ''}`}>{r.ok ? <IconCheck size={14} /> : <IconClose size={14} />}</span>
+            <ProductThumb id={r.productId} size={36} />
             <span className="grow">
               {r.name}
               {!r.ok && <span className="small" style={{ color: 'var(--danger-text)', display: 'block' }}>{r.error}</span>}
