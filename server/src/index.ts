@@ -10,6 +10,7 @@ import { openDatabase } from './db.js';
 import { createNemlig, NemligError } from './nemlig.js';
 import { registerRoutes } from './routes.js';
 import { createErrorReporter } from './sentry.js';
+import { createAuth, createLoginLimiter, loadSecret } from './auth.js';
 import { createEvents } from './events.js';
 import { createStore } from './store.js';
 
@@ -45,6 +46,14 @@ const ai = createAi(config.ai);
 const nemlig = createNemlig(config.nemlig, config.ai.apiKey);
 const db = openDatabase(config.dbPath);
 const events = createEvents();
+const auth = createAuth({
+  password: config.auth.password,
+  secret: config.auth.password ? loadSecret(config.auth.secretPath) : '',
+});
+const loginLimiter = createLoginLimiter({
+  maxFailures: config.auth.maxFailures,
+  windowMs: config.auth.failureWindowMs,
+});
 
 /**
  * New items are put in aisles in the background, a few seconds after they
@@ -120,7 +129,7 @@ app.setErrorHandler((error: FastifyError | Error, req, reply) => {
   return reply.status(status).send({ error: error.message });
 });
 
-await registerRoutes(app, { store, ai, nemlig, reporter, config, events, categoriseNow });
+await registerRoutes(app, { store, ai, nemlig, reporter, config, events, auth, loginLimiter, categoriseNow });
 
 // Open event streams would otherwise hold the server open on shutdown.
 app.addHook('preClose', async () => events.close());
@@ -146,6 +155,7 @@ if (existsSync(join(clientDir, 'index.html'))) {
 app.log.info(
   {
     ai: ai.enabled ? { baseUrl: config.ai.baseUrl, model: config.ai.model } : 'disabled',
+    login: auth.enabled ? 'password' : 'open — set GROCER_PASSWORD before exposing it',
     nemlig: nemlig.enabled ? { mcpUrl: config.nemlig.mcpUrl, server: config.nemlig.server } : 'disabled',
     db: config.dbPath,
   },

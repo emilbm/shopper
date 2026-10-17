@@ -1592,3 +1592,33 @@ kbd {
 .plan-day--past:focus-within {
   opacity: 1;
 }
+
+/* ----------------------------------------------------------------- login */
+
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--gutter);
+}
+
+.login__card {
+  width: 100%;
+  max-width: 360px;
+  padding: 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.login__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login__brand h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}

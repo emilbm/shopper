@@ -55,6 +55,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     version,
     builtAt: str(env, 'GROCER_BUILT_AT', '') || null,
 
+    auth: {
+      // The household's password. Empty leaves the app open, as it is on the
+      // LAN; set it before putting the app on the internet.
+      password: str(env, 'GROCER_PASSWORD', ''),
+      // Where the login-signing secret is kept; made on first start.
+      secretPath: str(env, 'GROCER_SESSION_KEY_PATH', resolve(dataDir, 'session.key')),
+      // Wrong passwords allowed per visitor before a pause.
+      maxFailures: int(env, 'LOGIN_MAX_FAILURES', 10, problems, { min: 1, max: 1000 }),
+      failureWindowMs: int(env, 'LOGIN_FAILURE_WINDOW_MINUTES', 15, problems, { min: 1, max: 1440 }) * 60_000,
+    },
+
     ai: {
       // The OpenAI-compatible endpoint of the homelab's LiteLLM harness, e.g.
       // http://ai-ops:4000/v1. Empty turns every AI feature off; the app falls
@@ -100,6 +111,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   }
   // Without the harness there is no gateway to reach Nemlig through.
   if (!cfg.ai.baseUrl || !cfg.ai.apiKey) cfg.nemlig.enabled = false;
+
+  if (cfg.auth.password && cfg.auth.password.length < 8) {
+    problems.push('GROCER_PASSWORD must be at least 8 characters');
+  }
 
   // Fail at startup on a malformed DSN, rather than silently dropping the
   // first real error weeks later.

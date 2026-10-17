@@ -24,9 +24,18 @@ services:
       # looks there); only the left-hand side is yours to change. 8080 and
       # 8081 are already taken on the apps server.
       #
-      # LAN only. The app has no login: put Cloudflare Access in front of it
-      # before pointing a tunnel at it.
+      # Before pointing a Cloudflare tunnel at it, set GROCER_PASSWORD: the
+      # app's own login is the only lock. The tunnel's public hostname can
+      # point straight at this port (http://192.168.1.55:8083).
       - "${GROCER_PORT:-8083}:8080"
+    # Or reach it over the apps server's shared Docker network instead, as the
+    # Caddy stack's services are: uncomment this and the networks block at the
+    # bottom, and point the tunnel (if cloudflared runs as a container on that
+    # network) or Caddy at http://grocer:8080. The ports above can then go, so
+    # the app is not reachable in plain HTTP on the LAN. Recreate the stack to
+    # move a running container onto the network.
+    # networks:
+    #   - apps-net
     volumes:
       # Named volume by default. Swap for a bind mount (- /srv/grocer:/data)
       # if it's easier to fold into the host's backup job.
@@ -50,3 +59,7 @@ services:
 
 volumes:
   grocer-data:
+
+# networks:
+#   apps-net:
+#     external: true

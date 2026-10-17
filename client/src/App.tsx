@@ -1,4 +1,6 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { api, LOGGED_OUT_EVENT } from './api';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { IconBook, IconCalendar, IconCart, IconList, IconPot, IconTag } from './components/ui';
 import { isTyping } from './keys';
@@ -9,6 +11,7 @@ import CookPage from './pages/CookPage';
 import ItemsPage from './pages/ItemsPage';
 import ListEditPage from './pages/ListEditPage';
 import ListsPage from './pages/ListsPage';
+import LoginPage from './pages/LoginPage';
 import NemligPage from './pages/NemligPage';
 import PlanPage from './pages/PlanPage';
 import PlansPage from './pages/PlansPage';
@@ -34,7 +37,28 @@ function Home() {
   return <Navigate to={`/${lastMode() ?? (wide ? 'shop' : 'cook')}`} replace />;
 }
 
+/**
+ * With a password set on the server, nothing but the login page is shown
+ * until this browser has logged in. A refusal later on — the password or the
+ * login generation changed — brings the login page back.
+ */
 export default function App() {
+  const qc = useQueryClient();
+  const session = useQuery({ queryKey: ['session'], queryFn: api.session, staleTime: Infinity, retry: false });
+
+  useEffect(() => {
+    const recheck = () => void qc.invalidateQueries({ queryKey: ['session'] });
+    window.addEventListener(LOGGED_OUT_EVENT, recheck);
+    return () => window.removeEventListener(LOGGED_OUT_EVENT, recheck);
+  }, [qc]);
+
+  if (session.isLoading) return null;
+  if (session.data?.required && !session.data.authenticated) return <LoginPage />;
+  return <Signed loginRequired={!!session.data?.required} />;
+}
+
+/** The app itself, for a browser that may use it. */
+function Signed({ loginRequired }: { loginRequired: boolean }) {
   const { pathname } = useLocation();
   const cooking = pathname.startsWith('/cook');
   useLiveSync();
@@ -57,7 +81,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <ShopNav />
+      <ShopNav loginRequired={loginRequired} />
       <div className="content">
         <Routes>
           <Route path="/" element={<Home />} />
@@ -81,8 +105,9 @@ export default function App() {
   );
 }
 
-function ShopNav() {
+function ShopNav({ loginRequired }: { loginRequired: boolean }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const shop = useShop();
   const toGet = shop.data?.lines.filter((l) => !l.checked).length ?? 0;
 
@@ -132,6 +157,17 @@ function ShopNav() {
       </NavLink>
       <div className="nav__hint">
         <kbd>/</kbd> add to the list · <kbd>g</kbd> <kbd>r</kbd> recipes
+        {loginRequired && (
+          <>
+            {' · '}
+            <button
+              className="linkish"
+              onClick={() => void api.logout().then(() => qc.invalidateQueries({ queryKey: ['session'] }))}
+            >
+              Log out
+            </button>
+          </>
+        )}
       </div>
     </nav>
   );

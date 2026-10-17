@@ -23,6 +23,16 @@ import { CLIENT_ID } from './live';
  */
 const BASE = '/api';
 
+/**
+ * Fired when the server says this browser is not logged in (any more), so
+ * the app can show the login page instead of an error.
+ */
+export const LOGGED_OUT_EVENT = 'grocer:logged-out';
+
+const noteStatus = (status: number) => {
+  if (status === 401) window.dispatchEvent(new Event(LOGGED_OUT_EVENT));
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -57,6 +67,7 @@ async function streamed<T>(path: string, body: unknown, onProgress: (progress: N
     } catch {
       /* keep the status */
     }
+    noteStatus(res.status);
     throw new ApiError(res.status, message);
   }
 
@@ -116,6 +127,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       typeof parsed === 'object' && parsed !== null && 'error' in parsed
         ? String((parsed as { error: unknown }).error)
         : `Request failed (${res.status})`;
+    noteStatus(res.status);
     throw new ApiError(res.status, message);
   }
 
@@ -171,6 +183,10 @@ export interface ParsedEntries {
 
 export const api = {
   meta: () => request<Meta>('GET', '/meta'),
+
+  session: () => request<{ required: boolean; authenticated: boolean }>('GET', '/session'),
+  login: (password: string) => request<void>('POST', '/login', { password }),
+  logout: () => request<void>('POST', '/logout', {}),
 
   items: {
     list: () => request<Item[]>('GET', '/items'),

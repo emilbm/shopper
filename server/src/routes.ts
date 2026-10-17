@@ -8,6 +8,7 @@ import { AiError, type Ai } from './ai.js';
 import type { Config } from './config.js';
 import { fetchImage, fetchPage, findImage, IMAGE_TYPES, ImportError, importRecipe } from './importer.js';
 import { applyToBasket, checkOrdered, planShop, type Nemlig } from './nemlig.js';
+import { COOKIE_MAX_AGE_S, COOKIE_NAME, parseCookies, type Auth, type createLoginLimiter } from './auth.js';
 import type { Events } from './events.js';
 import type { ErrorReporter } from './sentry.js';
 import type { Store } from './store.js';
@@ -77,8 +78,13 @@ export interface RouteDeps {
   reporter: ErrorReporter;
   config: Config;
   events: Events;
+  auth: Auth;
+  loginLimiter: ReturnType<typeof createLoginLimiter>;
   categoriseNow: () => Promise<number>;
 }
+
+/** What answers without a login: enough to show the login page and to be health-checked. */
+const PUBLIC_API = new Set(['/api/health', '/api/session', '/api/login', '/api/logout']);
 
 /** Requests that change nothing, though they are not GETs. */
 const READ_ONLY_POSTS = new Set([
@@ -108,6 +114,70 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
       app.log.warn({ err, recipeId, imageUrl }, 'could not keep the recipe picture');
     }
   };
+
+  /* ------------------------------------------------------------ login */
+
+  const { auth, loginLimiter } = deps;
+  const loggedIn = (req: FastifyRequest) => auth.verify(parseCookies(req.headers.cookie)[COOKIE_NAME]);
+  /** The visitor, as Cloudflare's tunnel reports them, else as the proxy chain does. */
+  const visitor = (req: FastifyRequest) => {
+    const cf = req.headers['cf-connecting-ip'];
+    return typeof cf === 'string' && cf ? cf : req.ip;
+  };
+  const cookie = (req: FastifyRequest, value: string, maxAge: number) =>
+    [
+      `${COOKIE_NAME}=${value}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${maxAge}`,
+      // Over the tunnel the browser sees https; on the LAN it may be plain http.
+      ...(req.protocol === 'https' ? ['Secure'] : []),
+    ].join('; ');
+
+  app.addHook('onRequest', async (req, reply) => {
+    const path = req.url.split('?')[0]!;
+    if (!path.startsWith('/api/')) return; // the page itself holds no data
+    // A change must come from this site: the login cookie is SameSite=Lax and
+    // the API takes JSON, and this refuses any other site's Origin outright.
+    const origin = req.headers.origin;
+    if (req.method !== 'GET' && req.method !== 'HEAD' && origin) {
+      let host = '';
+      try {
+        host = new URL(origin).host;
+      } catch {
+        /* unreadable: refused below */
+      }
+      if (host !== req.headers.host) return reply.status(403).send({ error: 'Not from this site' });
+    }
+    if (!auth.enabled || PUBLIC_API.has(path) || loggedIn(req)) return;
+    return reply.status(401).send({ error: 'Log in first' });
+  });
+
+  /** Whether a password is needed, and whether this browser has logged in. */
+  app.get('/api/session', async (req) => ({ required: auth.enabled, authenticated: !auth.enabled || loggedIn(req) }));
+
+  app.post('/api/login', async (req, reply) => {
+    if (!auth.enabled) return reply.status(204).send();
+    const key = visitor(req);
+    const wait = loginLimiter.retryAfter(key);
+    if (wait) {
+      return reply
+        .status(429)
+        .header('retry-after', String(wait))
+        .send({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60)} min.` });
+    }
+    const { password } = z.object({ password: z.string().max(200) }).parse(req.body);
+    if (!auth.checkPassword(password)) {
+      loginLimiter.fail(key);
+      req.log.warn({ visitor: key }, 'wrong password');
+      return reply.status(401).send({ error: 'That is not the password' });
+    }
+    loginLimiter.succeed(key);
+    return reply.header('set-cookie', cookie(req, auth.issue(), COOKIE_MAX_AGE_S)).status(204).send();
+  });
+
+  app.post('/api/logout', async (req, reply) => reply.header('set-cookie', cookie(req, '', 0)).status(204).send());
 
   app.get('/api/health', async () => ({ ok: true }));
 
