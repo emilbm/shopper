@@ -924,3 +924,33 @@ test('nemlig: plan and fill can stream their progress, line by line', async () =
   });
   assert.ok(['done', 'error'].includes(failed.at(-1).type));
 });
+
+test('nemlig: once the basket has been ordered, what was done comes off the list', async () => {
+  await call('POST', '/shop/clear', { onlyChecked: false });
+  let { body: shop } = await call('POST', '/shop/items', {
+    entries: ['Hvedemel', 'Smør', 'Gær'].map((name) => ({ name, quantity: null, unit: '', note: '' })),
+  });
+  const line = (n) => shop.lines.find((l) => l.name === n);
+
+  // Nothing in the basket yet: nothing to check.
+  assert.deepEqual((await call('POST', '/shop/check-order', {})).body.ordered, false);
+
+  // Flour goes into the basket, butter is ticked off as in stock, yeast is still to get.
+  await call('POST', '/nemlig/apply', {
+    entries: [{ lineId: line('Hvedemel').id, itemId: line('Hvedemel').itemId, productId: 'm3', productName: 'Hvedemel', quantity: 1 }],
+  });
+  await call('PATCH', `/shop/lines/${line('Smør').id}`, { checked: true });
+
+  // While the flour is still in the basket, the order has not gone through.
+  let check = await call('POST', '/shop/check-order', {});
+  assert.equal(check.body.ordered, false);
+  assert.equal(check.body.shop.lines.length, 3);
+
+  // Checkout empties the basket; something new for next time does not count.
+  nemligState.basket.clear();
+  nemligState.basket.set('k1', 1);
+  check = await call('POST', '/shop/check-order', {});
+  assert.equal(check.body.ordered, true);
+  assert.equal(check.body.cleared, 2);
+  assert.deepEqual(check.body.shop.lines.map((l) => l.name), ['Gær']);
+});

@@ -237,6 +237,9 @@ export const api = {
 
   shop: {
     get: () => request<ShoppingList>('GET', '/shop'),
+    /** Whether the Nemlig basket has been ordered; if so, what was done is cleared off. */
+    checkOrder: () =>
+      request<{ ordered: boolean; cleared: number; shop: ShoppingList }>('POST', '/shop/check-order', {}),
     addDinner: (dinnerId: number) => request<ShoppingList>('POST', '/shop/dinners', { dinnerId }),
     removeDinner: (dinnerId: number) => request<ShoppingList>('DELETE', `/shop/dinners/${dinnerId}`),
     addRecipe: (recipeId: number, servings?: number) =>

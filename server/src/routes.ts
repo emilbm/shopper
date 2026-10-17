@@ -7,7 +7,7 @@ import { parseIngredientLine, splitItems } from '../../shared/units.js';
 import { AiError, type Ai } from './ai.js';
 import type { Config } from './config.js';
 import { fetchImage, fetchPage, findImage, IMAGE_TYPES, ImportError, importRecipe } from './importer.js';
-import { applyToBasket, planShop, type Nemlig } from './nemlig.js';
+import { applyToBasket, checkOrdered, planShop, type Nemlig } from './nemlig.js';
 import type { Events } from './events.js';
 import type { ErrorReporter } from './sentry.js';
 import type { Store } from './store.js';
@@ -81,7 +81,14 @@ export interface RouteDeps {
 }
 
 /** Requests that change nothing, though they are not GETs. */
-const READ_ONLY_POSTS = new Set(['/api/recipes/import', '/api/shop/parse', '/api/nemlig/plan', '/api/client-errors']);
+const READ_ONLY_POSTS = new Set([
+  '/api/recipes/import',
+  '/api/shop/parse',
+  '/api/nemlig/plan',
+  '/api/client-errors',
+  // Usually changes nothing; it announces the change itself when it does.
+  '/api/shop/check-order',
+]);
 
 export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   const { store, ai, nemlig, reporter, config } = deps;
@@ -410,6 +417,28 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps) {
   app.post('/api/shop/clear', async (req) => {
     const { onlyChecked } = z.object({ onlyChecked: z.boolean().default(true) }).parse(req.body ?? {});
     return store.shop.clear(onlyChecked);
+  });
+
+  /**
+   * Finish the shop once it has been ordered: asked by the list when it is
+   * opened. Nemlig being out of reach is no error here — the list simply
+   * stays as it is until the next look.
+   */
+  let checking: ReturnType<typeof checkOrdered> | null = null;
+  app.post('/api/shop/check-order', async (req) => {
+    try {
+      // Several devices opening the list at once share one look at Nemlig.
+      checking ??= checkOrdered({ store, nemlig }).finally(() => (checking = null));
+      const check = await checking;
+      if (check.ordered) {
+        const by = req.headers['x-grocer-client'];
+        deps.events.changed(typeof by === 'string' ? by.slice(0, 64) : undefined);
+      }
+      return { ...check, shop: store.shop.get() };
+    } catch (err) {
+      req.log.warn({ err }, 'could not check the Nemlig basket');
+      return { ordered: false, cleared: 0, shop: store.shop.get() };
+    }
   });
 
   /* ------------------------------------------------------------ Nemlig */

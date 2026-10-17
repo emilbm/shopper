@@ -371,3 +371,40 @@ export async function applyToBasket(
     return { results, basketTotal };
   });
 }
+
+/* ---------------------------------------------------------- finishing */
+
+export interface OrderCheck {
+  /** Whether the products sent to Nemlig have left the basket — ordered. */
+  ordered: boolean;
+  /** Lines cleared off the list because of it. */
+  cleared: number;
+}
+
+/**
+ * Has the basket Grocer filled been ordered? Nemlig empties the basket at
+ * checkout, so once none of the products Grocer put in are in it any more —
+ * an empty basket, or a new one already started for next time — the shop is
+ * done: what was in the basket or already in stock comes off the list, and
+ * what is still to get stays. While any of them is still there, nothing
+ * happens. Nothing marked as in the basket means nothing to check.
+ */
+export async function checkOrdered(deps: { store: Store; nemlig: Nemlig }): Promise<OrderCheck> {
+  const lines = deps.store.shop.get().lines;
+  const sent = lines.filter((l) => l.inBasket);
+  if (!sent.length || !deps.nemlig.enabled) return { ordered: false, cleared: 0 };
+
+  const items = new Map(deps.store.items.list().map((i) => [i.id, i]));
+  const ours = new Set(sent.map((l) => items.get(l.itemId)?.nemlig?.productId).filter((id): id is string => !!id));
+  const basket = await deps.nemlig.withSession((session) => session.basket());
+  const inBasket = new Set(
+    (basket.Lines ?? []).filter((l) => (l.Quantity ?? 1) > 0).map((l) => String(l.Id ?? l.ProductId ?? '')),
+  );
+  // Without a product to look for, only an empty basket says it was ordered.
+  const ordered = ours.size ? ![...ours].some((id) => inBasket.has(id)) : inBasket.size === 0;
+  if (!ordered) return { ordered: false, cleared: 0 };
+
+  const cleared = lines.filter((l) => l.checked || l.inBasket).length;
+  deps.store.shop.clear(true);
+  return { ordered: true, cleared };
+}

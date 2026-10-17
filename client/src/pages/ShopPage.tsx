@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { categoryLabel } from '../../../shared/categories';
 import type { Dinner, ShopContributor, ShoppingLine } from '../../../shared/types';
@@ -24,11 +25,61 @@ import {
 } from '../components/ui';
 import { dayLabel } from '../days';
 import { isTyping } from '../keys';
-import { useAiEnabled, useNemligEnabled, useDinnerMutation, useDinners, useLists, useRecipes, useShop, useShopMutation } from '../queries';
+import {
+  keys,
+  useAiEnabled,
+  useNemligEnabled,
+  useDinnerMutation,
+  useDinners,
+  useLists,
+  useRecipes,
+  useShop,
+  useShopMutation,
+} from '../queries';
 import { useWide } from '../useWide';
+
+/** When this browser last asked Nemlig whether the basket was ordered. */
+let lastOrderCheck = 0;
+
+/**
+ * Finish the shop by itself: while anything on the list is in the Nemlig
+ * basket, look — when the list is opened, and again when it is come back
+ * to, at most once a minute — whether that basket has been ordered. If it
+ * has, the server clears what was done, and this says so.
+ */
+function useOrderCheck(hasBasket: boolean, onFinished: (cleared: number) => void) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!hasBasket) return;
+    let live = true;
+    const check = async () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastOrderCheck < 60_000) return;
+      lastOrderCheck = Date.now();
+      try {
+        const res = await api.shop.checkOrder();
+        if (!live || !res.ordered) return;
+        qc.setQueryData(keys.shop, res.shop);
+        onFinished(res.cleared);
+      } catch {
+        /* Nemlig or the server out of reach: the next look will do */
+      }
+    };
+    void check();
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      live = false;
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [hasBasket, qc, onFinished]);
+}
 
 export default function ShopPage() {
   const shop = useShop();
+  const [finished, setFinished] = useState<number | null>(null);
+  useOrderCheck(
+    !!shop.data?.lines.some((l) => l.inBasket),
+    useCallback((cleared: number) => setFinished(cleared), []),
+  );
   const aiEnabled = useAiEnabled();
   const nemligEnabled = useNemligEnabled();
   const { confirm, dialog } = useConfirm();
@@ -152,6 +203,18 @@ export default function ShopPage() {
 
       <main className="main shop">
         <div className="shop__list">
+          {finished !== null && (
+            <div className="banner banner--info row row--between" style={{ marginBottom: 12 }}>
+              <span>
+                Your Nemlig order has gone through, so the {finished} {finished === 1 ? 'line' : 'lines'} in the basket or
+                already in stock came off the list.
+                {lines.length > 0 && ' What was still to get is still here.'}
+              </span>
+              <button className="btn btn--quiet btn--sm btn--icon" onClick={() => setFinished(null)} aria-label="Dismiss">
+                <IconClose size={16} />
+              </button>
+            </div>
+          )}
           <EntryDatalists />
           <form
             className="quickadd"
