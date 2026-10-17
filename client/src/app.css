@@ -1545,3 +1545,50 @@ kbd {
   border-radius: 50%;
   background: var(--border-strong);
 }
+
+/* --------------------------------------------- planner: now and next */
+
+.plan-period {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.plan-period__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.plan-period__title .sub {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.plan-period--start {
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.plan-day--today {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.plan-day--today .plan-day__weekday {
+  color: var(--accent-text);
+}
+
+/* Days already eaten: still there to correct, but quieter. */
+.plan-day--past {
+  opacity: 0.6;
+}
+
+.plan-day--past:hover,
+.plan-day--past:focus-within {
+  opacity: 1;
+}

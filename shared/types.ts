@@ -170,21 +170,32 @@ export interface PlanDay {
 }
 
 /** The current plan, as the planner shows it. */
-export interface WeekPlan {
+/** One plan's days, as the planner shows them. */
+export interface PlanPeriod {
   id: number;
   /** The plan's own first and last day. */
   from: string;
   to: string;
-  /** Its days from tomorrow on: today and earlier are already decided. */
   days: PlanDay[];
-  /**
-   * Earlier plans still being eaten — the next plan is often made before the
-   * last is over — with their days from tomorrow on.
-   */
-  earlier: Array<{ id: number; from: string; to: string; days: PlanDay[] }>;
-  /** Planned, not cooked, and not on any day yet. */
+  /** Whether this is the open plan, whose days can still be added and removed. */
+  current: boolean;
+}
+
+/**
+ * The planner's two parts: the plan being eaten now, and the one being
+ * planned next. Often one plan is both — mid-week, before the next period is
+ * started — and then `next` is null.
+ */
+export interface WeekPlan {
+  /** The plan today falls in, with every one of its days: past ones too, to see and correct what was eaten. */
+  now: PlanPeriod | null;
+  /** The open plan when it starts after today, from tomorrow on: the period being planned. */
+  next: PlanPeriod | null;
+  /** The open plan, whichever part it is in. */
+  current: { id: number; from: string; to: string };
+  /** The open plan's dinners that have no day yet. */
   unscheduled: Dinner[];
-  /** Every day of it has passed: time to start the next. */
+  /** The open plan is over and nothing covers today: time to start the next. */
   ended: boolean;
 }
 

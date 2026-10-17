@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import type { Dinner, PlanDay, RecipeSummary } from '../../../shared/types';
 import { api } from '../api';
 import { ErrorBanner, IconCart, IconCheck, IconClose, IconMinus, IconPlus, IconPot, Spinner, useConfirm } from '../components/ui';
-import { dayLabel, isWeekend, shortDate, today, weekday } from '../days';
+import { addDays, dayLabel, isWeekend, shortDate, today, weekday } from '../days';
 import { useFillList, usePlanWindow, useStored } from '../planWindow';
 import { keys, useDinnerMutation, useRecipes } from '../queries';
 
@@ -32,7 +32,6 @@ export default function PlanPage() {
   const [fillList, setFillList] = useFillList();
   const [showRecipes, setShowRecipes] = useStored('grocer.plan.recipes', true);
   const plan = range.plan;
-  const { confirm, dialog } = useConfirm();
   const startNext = useDinnerMutation(() => api.plan.startNext(today()));
   const recipes = useRecipes();
   const [over, setOver] = useState<string | null>(null);
@@ -66,9 +65,9 @@ export default function PlanPage() {
     };
   }, []);
 
+  /** Every day on screen: the plan being eaten, then the one being planned. */
+  const allDays = [...(plan.data?.now?.days ?? []), ...(plan.data?.next?.days ?? [])];
   /** The dinner on a day, if any: a day has at most one. */
-  /** Every day on screen: the last plan's remaining days, then this plan's. */
-  const allDays = [...(plan.data?.earlier.flatMap((e) => e.days) ?? []), ...(plan.data?.days ?? [])];
   const dinnerOn = (day: string) => allDays.find((d) => d.day === day)?.dinners[0];
 
   /**
@@ -114,35 +113,41 @@ export default function PlanPage() {
   };
 
   const unscheduled = plan.data?.unscheduled ?? [];
-  const planned = plan.data?.days.reduce((n, d) => n + d.dinners.length, 0) ?? 0;
-
-  const newPlan = async () => {
-    const ok = await confirm({
-      title: 'Start a new plan?',
-      body: 'This plan is kept under Past plans. Dinners without a day move to the new one.',
-      confirmLabel: 'Start a new plan',
-    });
-    if (ok) startNext.mutate(undefined);
-  };
+  const planned = (days: PlanDay[]) => days.filter((d) => d.dinners.length).length;
+  const days = (list: PlanDay[]) => (
+    <div className="plan-days">
+      {list.map((d) => (
+        <DayColumn
+          key={d.day}
+          day={d}
+          now={now}
+          recipes={recipes.data ?? []}
+          fillList={fillList}
+          dropProps={dropTarget(d.day)}
+        />
+      ))}
+    </div>
+  );
+  const addOrRemoveLast = (
+    <div className="row plan-more">
+      <button className="btn btn--ghost btn--sm" disabled={!range.canAddAfter} onClick={range.addAfter}>
+        <IconPlus size={16} /> Add a day
+      </button>
+      {range.canRemoveLast && (
+        <button className="btn btn--quiet btn--sm" onClick={range.removeLast}>
+          <IconMinus size={16} /> Remove the last day
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <>
       <header className="header plan-header">
-        <h1>
-          Plan{' '}
-          {plan.data && (
-            <span className="sub">
-              {shortDate(plan.data.from)} – {shortDate(plan.data.to)}
-              {plan.data.days.length > 0 && ` · ${planned} of ${plan.data.days.length} days planned`}
-            </span>
-          )}
-        </h1>
+        <h1>Plan</h1>
         <Link className="btn btn--quiet btn--sm" to="/plans">
           Past plans
         </Link>
-        <button className="btn btn--ghost btn--sm" disabled={!plan.data || startNext.isPending} onClick={() => void newPlan()}>
-          <IconPlus size={16} /> New plan
-        </button>
         <button className="btn btn--ghost btn--sm plan-header__shelf" aria-pressed={showRecipes} onClick={() => setShowRecipes(!showRecipes)}>
           {showRecipes ? 'Hide recipes' : 'Show recipes'}
         </button>
@@ -189,73 +194,64 @@ export default function PlanPage() {
             {recipes.data?.map((r) => <option key={r.id} value={r.name} />)}
           </datalist>
 
-          {/* The last plan, while it is still being eaten: its days stay
-              plannable here, and what goes on them stays in that plan. */}
-          {plan.data?.earlier.map((e) => (
-            <section key={e.id} className="plan-earlier">
-              <h2 className="section-title">
-                Rest of the last plan · {shortDate(e.from)} – {shortDate(e.to)}
+          {/* Now: the plan being eaten, every day of it — what was cooked,
+              tonight, and the rest — so dinners can still be swapped about. */}
+          {plan.data?.now && (
+            <section className="plan-period">
+              <h2 className="plan-period__title">
+                Now <span className="sub">{shortDate(plan.data.now.from)} – {shortDate(plan.data.now.to)}</span>
               </h2>
-              <div className="plan-days">
-                {e.days.map((d) => (
-                  <DayColumn
-                    key={d.day}
-                    day={d}
-                    now={now}
-                    recipes={recipes.data ?? []}
-                    fillList={fillList}
-                    dropProps={dropTarget(d.day)}
-                  />
-                ))}
-              </div>
+              {days(plan.data.now.days)}
+              {plan.data.now.current && addOrRemoveLast}
             </section>
-          ))}
-          {!!plan.data?.earlier.length && (
-            <h2 className="section-title">
-              This plan · {shortDate(plan.data.from)} – {shortDate(plan.data.to)}
-            </h2>
           )}
 
-          {plan.data && (
-            <div className="row plan-more plan-more--top">
-              {range.canAddBefore && (
-                <button className="btn btn--ghost btn--sm" onClick={range.addBefore}>
-                  <IconPlus size={16} /> Add a day before
-                </button>
+          {/* Next: the period being planned, from tomorrow at the earliest. */}
+          {plan.data?.next && (
+            <section className="plan-period">
+              <h2 className="plan-period__title">
+                Next{' '}
+                <span className="sub">
+                  {shortDate(plan.data.next.from)} – {shortDate(plan.data.next.to)} · {planned(plan.data.next.days)} of{' '}
+                  {plan.data.next.days.length} days planned
+                </span>
+              </h2>
+              {(range.canAddBefore || range.canRemoveFirst) && (
+                <div className="row plan-more plan-more--top">
+                  {range.canAddBefore && (
+                    <button className="btn btn--ghost btn--sm" onClick={range.addBefore}>
+                      <IconPlus size={16} /> Add a day before
+                    </button>
+                  )}
+                  {range.canRemoveFirst && (
+                    <button className="btn btn--quiet btn--sm" onClick={range.removeFirst}>
+                      <IconMinus size={16} /> Remove the first day
+                    </button>
+                  )}
+                </div>
               )}
-              {range.canRemove && (
-                <button className="btn btn--quiet btn--sm" onClick={range.removeFirst}>
-                  <IconMinus size={16} /> Remove the first day
-                </button>
-              )}
-            </div>
+              {days(plan.data.next.days)}
+              {addOrRemoveLast}
+            </section>
           )}
-          {plan.data && (
-            <div className="plan-days">
-              {plan.data.days.map((d) => (
-                <DayColumn
-                  key={d.day}
-                  day={d}
-                  now={now}
-                  recipes={recipes.data ?? []}
-                  fillList={fillList}
-                  dropProps={dropTarget(d.day)}
-                />
-              ))}
-            </div>
-          )}
-          {plan.data && (
-            <div className="row plan-more">
-              <button className="btn btn--ghost btn--sm" disabled={!range.canAddAfter} onClick={range.addAfter}>
-                <IconPlus size={16} /> Add a day
+          {plan.data?.now?.current && (
+            <section className="plan-period plan-period--start">
+              <h2 className="plan-period__title">Next</h2>
+              <p className="small muted" style={{ margin: 0 }}>
+                Plan the next period while this one is still being eaten. It starts{' '}
+                {dayLabel(addDays(plan.data.now.to, 1), now).toLowerCase()} and is as long as this one; this plan stays here
+                until it is over.
+              </p>
+              <button
+                className="btn btn--primary"
+                disabled={startNext.isPending}
+                onClick={() => startNext.mutate(undefined)}
+              >
+                <IconPlus size={16} /> Plan the next period
               </button>
-              {range.canRemove && (
-                <button className="btn btn--quiet btn--sm" onClick={range.removeLast}>
-                  <IconMinus size={16} /> Remove the last day
-                </button>
-              )}
-            </div>
+            </section>
           )}
+
           <p className="tiny faint" style={{ margin: '10px 2px 0' }}>
             Type a recipe’s name in a day — or anything else, like “Takeaway”. Drag dinners between days
             {showRecipes ? ', and recipes from the right onto a day' : ''}.
@@ -268,7 +264,6 @@ export default function PlanPage() {
           </aside>
         )}
       </main>
-      {dialog}
     </>
   );
 }
@@ -302,11 +297,11 @@ function DayColumn({
 
   return (
     <section
-      className={`plan-day${isWeekend(day.day) ? ' plan-day--weekend' : ''}`}
+      className={`plan-day${isWeekend(day.day) ? ' plan-day--weekend' : ''}${day.day === now ? ' plan-day--today' : ''}${day.day < now ? ' plan-day--past' : ''}`}
       {...dropProps}
     >
       <h2 className="plan-day__head">
-        <span className="plan-day__weekday">{weekday(day.day)}</span>
+        <span className="plan-day__weekday">{day.day === now ? 'Today' : weekday(day.day)}</span>
         <span className="plan-day__date">{shortDate(day.day)}</span>
       </h2>
 

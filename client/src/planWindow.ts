@@ -34,21 +34,29 @@ const daysBetween = (from: string, to: string) =>
   Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000) + 1;
 
 /**
- * The current plan, and moving its first and last days. The plan lives on
- * the server, so everyone in the household plans the same days. The days
- * shown start at tomorrow at the earliest — dinner tonight is already
- * decided — so a plan already under way shows only what is still to come.
+ * The plans, and moving the open plan's first and last days. Plans live on
+ * the server, so everyone in the household plans the same days.
+ *
+ * The open plan is either the period being planned (\`next\`, from tomorrow
+ * at the earliest) or, mid-week before the next is started, the one being
+ * eaten (\`now\`). A plan under way can grow or shrink at its end, but not
+ * lose today or the days before it: those dinners happened.
  */
 export function usePlanWindow() {
   const qc = useQueryClient();
   const plan = usePlan();
-  const tomorrow = addDays(today(), 1);
+  const day = today();
+  const tomorrow = addDays(day, 1);
   const data = plan.data;
-  const start = data?.from ?? tomorrow;
-  const end = data?.to ?? addDays(tomorrow, 6);
-  /** The first day shown. */
-  const from = start > tomorrow ? start : tomorrow;
+  const start = data?.current.from ?? tomorrow;
+  const end = data?.current.to ?? addDays(tomorrow, 6);
+  const underWay = !!data?.now?.current;
+  /** The open plan's first day on screen. */
+  const from = underWay || start > tomorrow ? start : tomorrow;
   const length = daysBetween(start, end);
+  const shown = (underWay ? data?.now?.days.length : data?.next?.days.length) ?? 0;
+  // A plan being eaten while the next is planned: the next starts after it.
+  const lastNow = data?.now && !data.now.current ? data.now.to : '';
 
   const range = useMutation({
     mutationFn: (r: { from: string; to: string }) => api.plan.setRange(r.from, r.to, today()),
@@ -58,19 +66,16 @@ export function usePlanWindow() {
     },
   });
   const ready = !!data && !range.isPending;
-  const shown = data?.days.length ?? 0;
-  // The last plan's final day, when it is still running: days up to it are its own.
-  const lastEarlier = data?.earlier.at(-1)?.to ?? '';
 
   return {
     plan,
     error: range.error,
-    canAddBefore: ready && from > tomorrow && (!lastEarlier || from > addDays(lastEarlier, 1)) && length < MAX_DAYS,
+    canAddBefore:
+      ready && !underWay && from > tomorrow && (!lastNow || from > addDays(lastNow, 1)) && length < MAX_DAYS,
+    canRemoveFirst: ready && !underWay && shown > 1,
     canAddAfter: ready && length < MAX_DAYS,
-    canRemove: ready && shown > 1,
+    canRemoveLast: ready && (underWay ? end > day : shown > 1),
     addBefore: () => range.mutate({ from: addDays(from, -1), to: end }),
-    // Moving the first shown day on also lets go of days already past; their
-    // dinners stay in the plan's record all the same.
     removeFirst: () => range.mutate({ from: addDays(from, 1), to: end }),
     addAfter: () => range.mutate({ from: start, to: addDays(end, 1) }),
     removeLast: () => range.mutate({ from: start, to: addDays(end, -1) }),

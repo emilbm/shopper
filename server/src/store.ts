@@ -981,23 +981,32 @@ export function createStore(db: Db, hooks: { onItemsCreated?: () => void } = {})
     get(today: string): WeekPlan {
       const row = plan.current();
       const tomorrow = addDays(today, 1);
+      // The plan being eaten: the one today falls in — the open plan, or the
+      // last one when the next has already been started.
+      const covering = db.get<PlanRow>(
+        'SELECT * FROM plans WHERE from_day <= ? AND to_day >= ? ORDER BY id DESC LIMIT 1',
+        today,
+        today,
+      );
+      const now = covering
+        ? {
+            id: covering.id,
+            from: covering.from_day,
+            to: covering.to_day,
+            current: covering.id === row.id,
+            days: planDays(covering, covering.from_day),
+          }
+        : null;
+      // The open plan, when it is still ahead: from tomorrow at the earliest.
+      const upcoming = !now?.current && row.to_day >= tomorrow;
       const from = row.from_day > tomorrow ? row.from_day : tomorrow;
-      // Earlier plans still being eaten: their days from tomorrow on.
-      const earlier = db
-        .all<PlanRow>('SELECT * FROM plans WHERE closed_at IS NOT NULL AND to_day >= ? ORDER BY from_day', tomorrow)
-        .map((p) => ({
-          id: p.id,
-          from: p.from_day,
-          to: p.to_day,
-          days: planDays(p, p.from_day > tomorrow ? p.from_day : tomorrow),
-        }));
       return {
-        id: row.id,
-        from: row.from_day,
-        to: row.to_day,
-        earlier,
-        days: from <= row.to_day ? planDays(row, from) : [],
-        ended: row.to_day < tomorrow,
+        now,
+        next: upcoming
+          ? { id: row.id, from: row.from_day, to: row.to_day, current: true, days: planDays(row, from) }
+          : null,
+        current: { id: row.id, from: row.from_day, to: row.to_day },
+        ended: !now?.current && !upcoming,
         unscheduled: db
           .all<DinnerRow>(
             `${DINNER_SQL} WHERE d.plan_id = ? AND d.day IS NULL AND d.cooked_at IS NULL ORDER BY d.position, d.id`,

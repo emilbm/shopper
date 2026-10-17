@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { dayLabel } from '../days';
+import { dayLabel, today } from '../days';
 import { useFillList } from '../planWindow';
 import { useDinnerMutation, usePlan } from '../queries';
 import { ErrorBanner, IconPot, Sheet, Spinner } from './ui';
@@ -21,6 +21,9 @@ export function PlanRecipeSheet({
   onPlanned: (day: string) => void;
 }) {
   const plan = usePlan();
+  // Any day still ahead: the rest of the plan being eaten, tonight included, and the next.
+  const day = today();
+  const days = plan.data ? [...(plan.data.now?.days ?? []).filter((d) => d.day >= day), ...(plan.data.next?.days ?? [])] : [];
   const [fillList, setFillList] = useFillList();
   const add = useDinnerMutation((day: string) => api.dinners.add({ recipeId, day, addToShop: fillList }));
 
@@ -31,7 +34,7 @@ export function PlanRecipeSheet({
         <ErrorBanner error={plan.error ?? add.error} />
         {plan.data && (
           <div className="card card--flush">
-            {plan.data.days.map((d) => (
+            {days.map((d) => (
               <button
                 key={d.day}
                 className="list__row day-pick"
